@@ -1,0 +1,11 @@
+requests
+beautifulsoup4
+pytz
+datetime
+dataclasses-json
+pandas
+playwright
+typing 
+schedule 
+python-telegram-bot
+lxml
