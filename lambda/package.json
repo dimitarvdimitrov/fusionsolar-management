@@ -1,0 +1,16 @@
+{
+  "name": "fusionsolar-lambda",
+  "version": "1.0.0",
+  "description": "FusionSolar Power Adjustment Lambda Functions",
+  "main": "index.js",
+  "scripts": {
+    "deploy": "serverless deploy",
+    "deploy:dev": "serverless deploy --stage dev",
+    "deploy:prod": "serverless deploy --stage prod",
+    "remove": "serverless remove"
+  },
+  "devDependencies": {
+    "serverless": "^3.28.1",
+    "serverless-python-requirements": "^6.1.2"
+  }
+}

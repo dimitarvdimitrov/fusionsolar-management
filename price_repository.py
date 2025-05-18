@@ -10,13 +10,22 @@ the retrieval from online sources and local storage for historical data access.
 
 import os
 import datetime
-import pytz
 from typing import Optional, Tuple
 import requests
 from io import StringIO
 import pandas as pd
 import logging
-from config import TIMEZONE, LOCAL_STORAGE_DIR
+from config import (
+    TIMEZONE, 
+    IBEX_TIMEZONE, 
+    LOCAL_STORAGE_DIR,
+    STORAGE_TYPE,
+    S3_BUCKET_NAME,
+    S3_REGION,
+    S3_ACCESS_KEY_ID,
+    S3_SECRET_ACCESS_KEY
+)
+from storage_interface import StorageInterface, LocalFileStorage, S3Storage
 
 # Import the PriceData and PriceEntry classes from price_analyzer
 from price_analyzer import PriceData, PriceEntry
@@ -38,21 +47,13 @@ class PriceRepository:
     3. Retrieving historical price data based on a datetime
     """
     
-    def __init__(self, storage_dir: str = LOCAL_STORAGE_DIR):
+    def __init__(self, storage: StorageInterface):
         """
         Initialize the price repository.
-        
-        Args:
-            storage_dir (str): Directory where price history is stored
         """
-        # Directory for storing price history
-        self.storage_dir = storage_dir
-        
-        # Create storage directory if it doesn't exist
-        if not os.path.exists(self.storage_dir):
-            os.makedirs(self.storage_dir)
-            logger.info(f"Created storage directory: {self.storage_dir}")
-    
+        # Storage implementation
+        self.storage = storage
+
     def get_prices_for_date(self, target_date: datetime.datetime) -> PriceData:
         """
         Get price data for the day containing the specified datetime.
@@ -72,55 +73,47 @@ class PriceRepository:
         logger.info(f"Getting prices for date: {target_date}")
         
         # 1. First, check if we have local data for the target date
-        local_data = self._get_local_data(target_date)
+        local_data = self._get_stored_data(target_date)
         if local_data:
-            logger.info(f"Found local price data for {target_date}")
+            logger.info(f"Found stored price data for {target_date}")
             return local_data
         
-        # We won't be able to fetch data for today.
-        if target_date.date() == datetime.datetime.now(pytz.timezone(TIMEZONE)).date():
-            raise Exception(f"No local data available for today ({target_date}) and day ahead prices are already gone")
-        
         # 2. If local data doesn't exist, fetch from online source and save locally
-        logger.info(f"No local data found for {target_date}, fetching from online source")
+        logger.info(f"No stored data found for {target_date}, fetching from online source")
         self._fetch_and_store_data()
         logger.info(f"Successfully fetched and stored price data for {target_date}")
         
         # 3. Try to get local data again after fetching
-        local_data = self._get_local_data(target_date)
+        local_data = self._get_stored_data(target_date)
         if local_data:
             return local_data
         else:
             # 4. If still no local data, raise exception
-            raise Exception(f"Failed to retrieve local data after fetching for {target_date}")
+            raise Exception(f"Failed to retrieve stored data after fetching for {target_date}")
     
-    def _get_local_data(self, date: datetime.datetime) -> Optional[PriceData]:
+    def _get_stored_data(self, date: datetime.datetime) -> Optional[PriceData]:
         """
-        Try to get price data from local storage for the specified date.
+        Try to get price data from storage for the specified date.
         
         Args:
-            date (datetime.datetime): The date for which to retrieve local data
+            date (datetime.datetime): The date for which to retrieve data
             
         Returns:
             Optional[PriceData]: Price data if found, None otherwise
         """
-        # 1. Generate the filename from the date
+        # Generate the filename from the date
         filename = self._generate_parsed_filename(date)
-        
-        # 2. Check if the file exists
-        if not os.path.exists(filename):
-            logger.info(f"Local data file not found: {filename}")
-            return None
-        
+
         try:
             # 3. Read and parse the file into a PriceData object
-            with open(filename, 'r') as file:
-                json_data = file.read()
+            json_data = self.storage.read_text(filename)
+            if json_data is None:
+                return None
                 
             # Use dataclass_json to deserialize directly to PriceData
             price_data = PriceData.from_json(json_data)
 
-            tz = pytz.timezone(TIMEZONE)
+            tz = TIMEZONE
             # Localize each entry's time if needed
             for entry in price_data.entries:
                 if entry.time.tzinfo is None:
@@ -128,11 +121,11 @@ class PriceRepository:
                 elif entry.time.tzinfo != tz:
                     entry.time = entry.time.astimezone(tz)
             
-            logger.info(f"Successfully loaded local price data from {filename}: {len(price_data.entries)} entries")
+            logger.info(f"Successfully loaded stored price data from {filename}: {len(price_data.entries)} entries")
             return price_data
                 
         except Exception as e:
-            logger.error(f"Error loading local price data from {filename}: {e}")
+            logger.error(f"Error loading stored price data from {filename}: {e}")
             return None
     
     def _fetch_and_store_data(self):
@@ -155,15 +148,15 @@ class PriceRepository:
             # Get current time in the configured timezone
             data_date = price_data.get_date()
             
-            # Check if we already have this data stored locally using _get_local_data
-            existing_data = self._get_local_data(data_date)
+            # Check if we already have this data stored
+            existing_data = self._get_stored_data(data_date)
             if existing_data:
-                logger.info(f"Price data for {data_date.strftime('%Y-%m-%d')} already exists on disk")
+                logger.info(f"Price data for {data_date.strftime('%Y-%m-%d')} already exists in storage")
                 if existing_data.entries != price_data.entries:
-                    raise Exception(f"Price data for {data_date.strftime('%Y-%m-%d')} already exists on disk but is different: existing {existing_data} != fetched {price_data}")
+                    raise Exception(f"Price data for {data_date.strftime('%Y-%m-%d')} already exists but is different: existing {existing_data} != fetched {price_data}")
             
-            # 3. Store the data locally if it doesn't exist
-            self._store_local_data(data_date, price_data, html_content)
+            # 3. Store the data if it doesn't exist
+            self._store_data(data_date, price_data, html_content)
             
         except Exception as e:
             logger.error(f"Error in fetch_and_store_data: {e}")
@@ -229,8 +222,7 @@ class PriceRepository:
             price_table = tables[1]
             logger.info(f"Processing price table with shape: {price_table.shape}")
             
-            # Get timezone for datetime conversion
-            tz = pytz.timezone(TIMEZONE)
+            tz = IBEX_TIMEZONE
             
             # Create PriceEntry objects from table rows
             entries = []
@@ -276,9 +268,9 @@ class PriceRepository:
         except Exception as e:
             raise Exception(f"Error parsing price table: {e}") from e
     
-    def _store_local_data(self, date: datetime.datetime, price_data: PriceData, html_content: str):
+    def _store_data(self, date: datetime.datetime, price_data: PriceData, html_content: str):
         """
-        Store price data locally for future retrieval.
+        Store price data using the configured storage implementation.
         
         Args:
             date (datetime.datetime): The date for which the data is relevant
@@ -289,37 +281,36 @@ class PriceRepository:
             None
             
         Raises:
-            Exception: If the data cannot be stored locally
+            Exception: If the data cannot be stored
         """
         try:
-            # 1. Generate the filename from the date
-            filename = self._generate_parsed_filename(date)
+            # Generate the filename from the date
 
-            # 2. Create the directory if it doesn't exist
-            os.makedirs(os.path.dirname(filename), exist_ok=True)
-          
-            # 3. Convert PriceData to JSON using dataclass_json
+            # Convert PriceData to JSON using dataclass_json
+
+            # Write the data to storage
+            parsed_filename = self._generate_parsed_filename(date)
             json_data = price_data.to_json(indent=2)
-            
-            # 4. Write the data to the file
-            with open(filename, 'w') as file:
-                file.write(json_data)
-                
-            logger.info(f"Successfully stored price data to {filename}")
-            
-            # 5. Store raw HTML content if provided
+            if self.storage.write_text(parsed_filename, json_data):
+                logger.info(f"Successfully stored price data to {parsed_filename}")
+            else:
+                raise Exception(f"Failed to write price data to {parsed_filename}")
+
+            # Store raw HTML content
             raw_filename = self._generate_raw_filename(date)
-            with open(raw_filename, 'w', encoding='utf-8') as file:
-                file.write(html_content)
-            logger.info(f"Successfully stored raw HTML content to {raw_filename}")
+            if self.storage.write_text(raw_filename, html_content):
+                logger.info(f"Successfully stored raw HTML content to {raw_filename}")
+            else:
+                logger.warning(f"Failed to write raw HTML content to {raw_filename}")
             
         except Exception as e:
-            logger.error(f"Error storing price data to file: {e}")
-            raise Exception(f"Failed to store price data locally: {e}") from e
+            logger.error(f"Error storing price data: {e}")
+            raise Exception(f"Failed to store price data: {e}") from e
     
-    def _generate_parsed_filename(self, date: datetime.datetime) -> str:
+    @staticmethod
+    def _generate_parsed_filename(date: datetime.datetime) -> str:
         """
-        Generate a filename for local storage based on the date.
+        Generate a filename for storage based on the date.
         
         Args:
             date (datetime.datetime): The date for which to generate a filename
@@ -327,9 +318,10 @@ class PriceRepository:
         Returns:
             str: The generated filename
         """
-        return f"{self.storage_dir}/ibex.bg-{date.strftime('%Y-%m-%d')}.json"
+        return f"ibex.bg-{date.strftime('%Y-%m-%d')}.json"
     
-    def _generate_raw_filename(self, date: datetime.datetime) -> str:
+    @staticmethod
+    def _generate_raw_filename(date: datetime.datetime) -> str:
         """
         Generate a filename for raw data storage based on the date.
         
@@ -339,4 +331,16 @@ class PriceRepository:
         Returns:
             str: The generated filename
         """
-        return f"{self.storage_dir}/ibex.bg-{date.strftime('%Y-%m-%d')}.html"
+        return f"ibex.bg-{date.strftime('%Y-%m-%d')}.html"
+
+    def prices_for_day_exist(self, date: datetime.datetime) -> bool:
+        """
+        Check if price data for the specified date exists in storage.
+
+        Args:
+            date (datetime.datetime): The date to check
+
+        Returns:
+            bool: True if data exists, False otherwise
+        """
+        return self._get_stored_data(date) is not None

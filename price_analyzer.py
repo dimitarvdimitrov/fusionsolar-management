@@ -8,27 +8,22 @@ This script fetches current electricity prices, analyzes them, and automatically
 adjusts the power limit on a Huawei FusionSolar SmartLogger based on price thresholds.
 """
 
-import requests
-from bs4 import BeautifulSoup
 import datetime
-import pytz
-from set_power import set_power_limit
+from storage_interface import StorageInterface, create_storage
+from set_power import SetPower
 import logging
 import sys
-import re
-from typing import List, Tuple, Optional
+from typing import List, Optional
 from dataclasses import dataclass
 from dataclasses_json import dataclass_json
-import pandas as pd  # Add pandas import
-from io import StringIO
 from telegram_notifier import TelegramNotifier
 from config import (
     TIMEZONE, 
     PRICE_THRESHOLD, 
     LOW_POWER_SETTING, 
     HIGH_POWER_SETTING, 
-    FUSION_USERNAME, 
-    FUSION_PASSWORD
+    FUSIONSOLAR_USERNAME, 
+    FUSIONSOLAR_PASSWORD
 )
 
 # Configure logging
@@ -128,7 +123,7 @@ telegram_notifier = TelegramNotifier()
 # Function definitions
 # -------------------
 
-def fetch_price_data() -> PriceData:
+def fetch_price_data(current_time: datetime.datetime, storage: StorageInterface) -> PriceData:
     """
     Fetch price data using the PriceRepository.
     
@@ -142,15 +137,11 @@ def fetch_price_data() -> PriceData:
         Exception: If price data cannot be fetched
     """
     try:
-        # Get the current time in the correct timezone
-        tz = pytz.timezone(TIMEZONE)
-        current_time = datetime.datetime.now(tz)
-        
         # Import PriceRepository here to avoid circular import
         from price_repository import PriceRepository
         
         # Create a price repository instance
-        repository = PriceRepository()
+        repository = PriceRepository(storage)
         
         # Get price data for the current time
         price_data = repository.get_prices_for_date(current_time)
@@ -159,17 +150,6 @@ def fetch_price_data() -> PriceData:
         return price_data
     except Exception as e:
         raise Exception(f"Failed to fetch price data: {e}") from e
-
-def get_current_time() -> datetime.datetime:
-    """
-    Get the current time as a datetime object.
-    
-    Returns:
-        datetime.datetime: Current time in the configured timezone
-    """
-    # Get current time in the specified timezone
-    tz = pytz.timezone(TIMEZONE)
-    return datetime.datetime.now(tz)
 
 
 def decide_power_setting(price_data: PriceData, current_time: datetime.datetime) -> str:
@@ -192,8 +172,7 @@ def decide_power_setting(price_data: PriceData, current_time: datetime.datetime)
             raise ValueError("No price entry found")
             
         # Check if the closest entry is more than 2 hours away from now
-        now = datetime.datetime.now(datetime.timezone.utc)
-        time_diff = abs((next_price_entry.time - now).total_seconds()) / 3600
+        time_diff = abs((next_price_entry.time - current_time).total_seconds()) / 3600
         if time_diff > 2:
             raise ValueError(f"Closest entry is more than 2 hours away from current time (difference: {time_diff:.2f} hours)")
         
@@ -223,29 +202,34 @@ def main():
     try:
         logger.info("Starting electricity price analysis")
         
+        # Get current time
+        current_time = datetime.datetime.now(TIMEZONE)
+        logger.info(f"Current time: {current_time}")
+
+        # Initialize storage interface
+        storage = create_storage()
+
         # Fetch price data using the repository
         logger.info("Fetching price data using PriceRepository")
-        price_data = fetch_price_data()
+        price_data = fetch_price_data(current_time, storage)
         logger.info(f"Parsed {len(price_data.entries)} price entries")
         logger.info(f"Price data: {price_data}")
-        
-        # Get current time
-        current_time = get_current_time()
-        logger.info(f"Current time: {current_time}")
-        
+
+
         # Decide power setting
         logger.info("Deciding power setting based on price")
         power_setting = decide_power_setting(price_data, current_time)
         
         # Apply the power setting
         logger.info(f"Setting power to {power_setting} kW")
-        result = set_power_limit(FUSION_USERNAME, FUSION_PASSWORD, power_setting)
+        power_setter = SetPower(FUSIONSOLAR_USERNAME, FUSIONSOLAR_PASSWORD, storage)
+        result = power_setter.set_power_limit(power_setting)
         
         if result:
             logger.info("Power setting successfully applied")
             power_changed = True
         else:
-            logger.error("Failed to apply power setting")
+            logger.info("Power setting is already applied")
             
     except Exception as e:
         logger.error(f"An error occurred: {e}")
@@ -258,10 +242,8 @@ def main():
         if power_setting == LOW_POWER_SETTING:
             telegram_notifier.send_message(f"✅ Мощността е зададена на НИСКА ({LOW_POWER_SETTING} kW) - цената ({price_data.get_closest_entry(current_time)}) е под прага ({PRICE_THRESHOLD:.2f} EUR/MWh).")
         else:
-            telegram_notifier.send_message(f"✅ Мощността е зададена на ВИСОКА ({HIGH_POWER_SETTING} kW) - цената ({price_data.get_closest_entry(current_time)}) е над прага ({PRICE_THRESHOLD:.2f} EUR/MWh).")
-    else:
-        telegram_notifier.send_message("⚠️ Няма промяна на мощността")
-    
+            telegram_notifier.send_message(f"✅ Мощността е зададена на {HIGH_POWER_SETTING} - цената ({price_data.get_closest_entry(current_time)}) е над прага ({PRICE_THRESHOLD:.2f} EUR/MWh).")
+
     return True
 
 

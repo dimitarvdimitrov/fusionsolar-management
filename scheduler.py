@@ -15,11 +15,9 @@ import logging
 import sys
 import schedule
 import price_analyzer
-import pytz
-from typing import Optional
+from storage_interface import create_storage
 from price_repository import PriceRepository
 from telegram_notifier import TelegramNotifier  # Import the new TelegramNotifier class
-from config import TIMEZONE
 
 # Configure logging
 logging.basicConfig(
@@ -44,8 +42,8 @@ class Scheduler:
     def __init__(self):
         """Initialize the scheduler."""
         logger.info("Initializing Scheduler...")
-        self.repository = PriceRepository()
-        self.next_day_prices_fetched = False
+        self.repository = PriceRepository(create_storage())
+        self.next_day_prices_fetched = self.repository.prices_for_day_exist(datetime.datetime.now() + datetime.timedelta(days=1))
         # Create a TelegramNotifier instance
         self.telegram_notifier = TelegramNotifier()
     
@@ -79,15 +77,11 @@ class Scheduler:
             logger.info("Fetching prices for next day...")
             
             # Get the current time in the configured timezone
-            tz = pytz.timezone(TIMEZONE)
-            current_time = datetime.datetime.now(tz)
+            current_time = datetime.datetime.now()
             
             # Calculate the next day's date
             next_day = current_time + datetime.timedelta(days=1)
-            
-            # Set the time to midnight for the next day
-            next_day = datetime.datetime.combine(next_day.date(), datetime.time.min, tzinfo=tz)
-            
+
             # Try to fetch prices for the next day
             logger.info(f"Attempting to fetch prices for {next_day.strftime('%Y-%m-%d')}")
             price_data = self.repository.get_prices_for_date(next_day)
