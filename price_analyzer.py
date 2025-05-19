@@ -10,7 +10,6 @@ adjusts the power limit on a Huawei FusionSolar SmartLogger based on price thres
 
 import datetime
 from storage_interface import StorageInterface, create_storage
-from set_power import SetPower
 import logging
 import sys
 from typing import List, Optional
@@ -271,6 +270,7 @@ def main():
         
         # Apply the power setting
         logger.info(f"Setting power to {power_setting} kW")
+        from set_power import SetPower
         power_setter = SetPower(FUSIONSOLAR_USERNAME, FUSIONSOLAR_PASSWORD, storage)
         result = power_setter.set_power_limit(power_setting)
         

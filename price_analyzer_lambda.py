@@ -5,6 +5,10 @@
 AWS Lambda function for analyzing electricity prices and setting power limits.
 This is extracted from the scheduler's price_analyzer functionality.
 """
+try:
+    import unzip_requirements
+except ImportError:
+    pass
 
 import logging
 from scheduler import Scheduler

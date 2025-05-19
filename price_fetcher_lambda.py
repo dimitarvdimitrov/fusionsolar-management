@@ -5,6 +5,10 @@
 AWS Lambda function for fetching next day electricity prices.
 This is extracted from the scheduler's fetch_next_day_prices function.
 """
+try:
+    import unzip_requirements
+except ImportError:
+    pass
 
 import logging
 from storage_interface import create_storage
