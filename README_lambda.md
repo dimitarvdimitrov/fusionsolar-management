@@ -20,14 +20,10 @@ brew install node
 npm install -g serverless
 
 # 2. Navigate to the lambda directory and install dependencies
-cd fusionsolar/lambda
 npm install
 
 # 4. deploy
 serverless deploy
-
-# Or use the npm script
-npm run deploy
 ```
 
 ## Prerequisites
@@ -66,9 +62,6 @@ Before deploying, make sure you have:
 ## Project Setup
 
 ```bash
-# Navigate to the lambda directory
-cd fusionsolar/lambda
-
 # Install dependencies
 npm install
 

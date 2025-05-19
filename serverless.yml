@@ -54,7 +54,7 @@ provider:
 
 package:
   patterns:
-    - '!node_modules/**'
+    - './**'
     - '!venv/**'
     - '!.idea/**'
     - '!.git/**'
@@ -62,12 +62,11 @@ package:
     - '!build/**'
     - '!**/__pycache__/**'
     - '!**/*.pyc'
-    - '../**'
+    - '!node_modules/**'
 
 functions:
   priceFetcher:
     handler: price_fetcher_lambda.lambda_handler
-    module: ..
     name: fusionsolar-price-fetcher
     description: Fetches electricity prices for the next day
     events:
@@ -77,7 +76,6 @@ functions:
 
   priceAnalyzer:
     handler: price_analyzer_lambda.lambda_handler
-    module: ..
     name: fusionsolar-price-analyzer
     description: Analyzes electricity prices and adjusts power settings
     events:
@@ -91,14 +89,6 @@ plugins:
 custom:
   pythonRequirements:
     dockerizePip: true  # Changed from false to true - this ensures dependencies are compiled for Lambda's environment when running on macos
-    useDownloadCache: true
-    useStaticCache: true
     pythonBin: python3
     slim: true
-    slimPatternsAppendDefaults: true
-    slimPatterns:
-      - '**/*.egg-info/**'
-      - '**/*.dist-info/**'
-      - '**/__pycache__/**'
-      - '**/*.pyc'
-    requirementsPath: ../requirements.txt   # Use the requirements.txt in the lambda folder
+    fileName: requirements.txt   # Use the requirements.txt in the lambda folder

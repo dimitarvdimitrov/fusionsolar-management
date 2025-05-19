@@ -7,8 +7,8 @@ This is extracted from the scheduler's price_analyzer functionality.
 """
 
 import logging
-from ... import Scheduler
-from ... import TelegramNotifier
+from scheduler import Scheduler
+from telegram_notifier import TelegramNotifier
 
 # Configure logging for Lambda
 logger = logging.getLogger()
