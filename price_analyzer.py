@@ -254,10 +254,9 @@ def main():
         # Check if it's daylight (between sunrise and sunset)
         daylight_info = is_daylight_with_times(current_time)
         if not daylight_info['is_daylight']:
-            logger.info("It's nighttime - skipping power changes as inverters are automatically shut down")
             sunrise_time = daylight_info['sunrise'].strftime('%H:%M')
             sunset_time = daylight_info['sunset'].strftime('%H:%M')
-            telegram_notifier.send_message(f"🌙 Нощно време - не променяме мощността (изгрев {sunrise_time}, залез {sunset_time}).")
+            logger.info(f"It's nighttime - skipping power changes as inverters are automatically shut down: sunrise ({sunrise_time}), sunset ({sunset_time}).")
             return True
 
         # Initialize storage interface
