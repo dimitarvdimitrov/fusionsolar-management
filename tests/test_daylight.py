@@ -113,6 +113,3 @@ class TestDaylightCalculations:
         assert sunset_result['is_daylight'] is True
 
 
-if __name__ == "__main__":
-    # Allow running the test file directly
-    pytest.main([__file__, "-v"])
