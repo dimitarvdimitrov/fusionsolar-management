@@ -144,3 +144,9 @@ S3_BUCKET_NAME = get_config_value("FUSIONSOLAR_S3_BUCKET_NAME", "fusionsolar-man
 S3_REGION = get_config_value("FUSIONSOLAR_S3_REGION", "eu-central-1")
 S3_ACCESS_KEY_ID = get_config_value("FUSIONSOLAR_S3_ACCESS_KEY_ID", allow_empty=True)
 S3_SECRET_ACCESS_KEY = get_config_value("FUSIONSOLAR_S3_SECRET_ACCESS_KEY", allow_empty=True)
+
+# Location configuration for sunrise/sunset calculations
+LOCATION_LATITUDE = float(get_config_value("FUSIONSOLAR_LOCATION_LATITUDE", "42.6420"))  # Karlovo, Bulgaria
+LOCATION_LONGITUDE = float(get_config_value("FUSIONSOLAR_LOCATION_LONGITUDE", "24.8083"))  # Karlovo, Bulgaria
+LOCATION_NAME = get_config_value("FUSIONSOLAR_LOCATION_NAME", "Karlovo")
+LOCATION_COUNTRY = get_config_value("FUSIONSOLAR_LOCATION_COUNTRY", "Bulgaria")

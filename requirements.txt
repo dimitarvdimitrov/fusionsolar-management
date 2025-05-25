@@ -10,3 +10,4 @@ schedule
 python-telegram-bot>=13.7
 lxml
 boto3>=1.20.0  # For S3 storage support
+astral>=3.0  # For sunrise/sunset calculations
