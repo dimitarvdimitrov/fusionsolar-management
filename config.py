@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 # AWS Secrets Manager Configuration
 AWS_REGION = os.environ.get("AWS_REGION", "eu-central-1")
-USE_SECRETS_MANAGER = os.environ.get("USE_SECRETS_MANAGER", "true").lower() == "true"
+USE_SECRETS_MANAGER = os.environ.get("USE_SECRETS_MANAGER", "false").lower() == "true"
 SECRETS_MANAGER_SECRET_NAME = os.environ.get("SECRETS_MANAGER_SECRET_NAME", "FusionSolarSecrets")
 
 def get_secret(secret_name):
@@ -42,7 +42,7 @@ def get_secret(secret_name):
         str: The secret value if successful, None otherwise
     """
     if not USE_SECRETS_MANAGER:
-        raise EnvironmentError(f"AWS Secrets Manager is not enabled and {secret_name} env var is not set. Set USE_SECRETS_MANAGER=true")
+        return None
 
     try:
         # Create a Secrets Manager client
