@@ -11,7 +11,6 @@ across different parts of the application.
 import logging
 import asyncio
 import telegram
-import time
 import random
 from typing import Optional
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
