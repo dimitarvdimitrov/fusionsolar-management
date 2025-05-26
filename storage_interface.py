@@ -121,23 +121,23 @@ class LocalFileStorage(StorageInterface):
         Returns:
             bool: True if successful, False otherwise
         """
-        fq_path = self.fq_path(path)
+        path = self.fq_path(path)
 
         # ensure the directory exists
-        directory = os.path.dirname(fq_path)
+        directory = os.path.dirname(path)
         if not os.path.exists(directory):
             os.makedirs(directory, exist_ok=True)
             logger.info(f"Created directory: {directory}")
 
         try:
             # Write the content to the file
-            with open(fq_path, 'wb') as file:
+            with open(path, 'wb') as file:
                 file.write(content)
-            logger.debug(f"Successfully wrote {len(content)} bytes to {fq_path}")
+            logger.debug(f"Successfully wrote {len(content)} bytes to {path}")
             return True
             
         except Exception as e:
-            logger.error(f"Error writing to file {fq_path}: {e}")
+            logger.error(f"Error writing to file {path}: {e}")
             return False
     
     def read_binary(self, path: str) -> Optional[bytes]:
@@ -150,6 +150,7 @@ class LocalFileStorage(StorageInterface):
         Returns:
             Optional[bytes]: The binary content if successful, None otherwise
         """
+        path = self.fq_path(path)
         try:
             if not self.file_exists(path):
                 logger.debug(f"File does not exist: {path}")
