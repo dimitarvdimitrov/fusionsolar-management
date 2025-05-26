@@ -219,17 +219,13 @@ def is_daylight_with_times(current_time: datetime.datetime) -> dict:
     
     # Get sunrise and sunset times for the current date
     current_date = current_time.date()
-    solar_times = sun(location.observer, date=current_date)
-    
+    solar_times = sun(location.observer, date=current_date, tzinfo=TIMEZONE)
     sunrise = solar_times['sunrise']
     sunset = solar_times['sunset']
-    
-    logger.info(f"Solar times for {current_date}: sunrise={sunrise.strftime('%H:%M')}, sunset={sunset.strftime('%H:%M')}")
-    
-    # Check if current time is between sunrise and sunset
+
     is_day = sunrise <= current_time <= sunset
-    logger.info(f"Current time {current_time.strftime('%H:%M')} - daylight: {is_day}")
-    
+    logger.info(f"Solar times for {current_date}: sunrise={sunrise.strftime('%H:%M')}, sunset={sunset.strftime('%H:%M')}, is_daylight={is_day}")
+
     return {
         'is_daylight': is_day,
         'sunrise': sunrise,
