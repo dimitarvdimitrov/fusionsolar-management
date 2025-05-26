@@ -11,6 +11,8 @@ across different parts of the application.
 import logging
 import asyncio
 import telegram
+import time
+import random
 from typing import Optional
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
@@ -31,24 +33,34 @@ class TelegramNotifier:
         self.bot_token = TELEGRAM_BOT_TOKEN
         self.chat_id = TELEGRAM_CHAT_ID
         
-    async def send_async_message(self, message: str) -> bool:
+    async def send_async_message(self, message: str, max_retries: int = 3, base_delay: float = 1.0) -> bool:
         """
-        Send a message to the configured Telegram chat asynchronously.
+        Send a message to the configured Telegram chat asynchronously with retry and exponential backoff.
         
         Args:
             message (str): The message to send
+            max_retries (int): Maximum number of retry attempts (default: 3)
+            base_delay (float): Base delay in seconds for exponential backoff (default: 1.0)
             
         Returns:
             bool: True if the message was sent successfully, False otherwise
         """
-        try:
-            bot = telegram.Bot(token=self.bot_token)
-            await bot.send_message(chat_id=self.chat_id, text=message)
-            logger.info(f"Telegram message sent: {message}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to send Telegram message: {e}")
-            return False
+        bot = telegram.Bot(token=self.bot_token)
+        
+        for attempt in range(max_retries + 1):
+            try:
+                await bot.send_message(chat_id=self.chat_id, text=message)
+                logger.info(f"Telegram message sent successfully on attempt {attempt + 1}: {message}")
+                return True
+            except Exception as e:
+                if attempt == max_retries:
+                    logger.error(f"Failed to send Telegram message after {max_retries + 1} attempts: {e}")
+                    return False
+                
+                # Calculate exponential backoff with jitter
+                delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                logger.warning(f"Telegram message send failed on attempt {attempt + 1}, retrying in {delay:.2f}s: {e}")
+                await asyncio.sleep(delay)
 
     def send_message(self, message: str) -> bool:
         """
