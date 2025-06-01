@@ -23,7 +23,11 @@ from config import (
     LOW_POWER_SETTING, 
     HIGH_POWER_SETTING, 
     FUSIONSOLAR_USERNAME, 
-    FUSIONSOLAR_PASSWORD
+    FUSIONSOLAR_PASSWORD,
+    LOCATION_LATITUDE,
+    LOCATION_LONGITUDE,
+    LOCATION_NAME,
+    LOCATION_COUNTRY
 )
 
 # Configure logging
@@ -191,6 +195,43 @@ def decide_power_setting(price_data: PriceData, current_time: datetime.datetime)
         # No future price entries available
         raise ValueError(f"Error determining power setting: {e}") from e
 
+def is_daylight_with_times(current_time: datetime.datetime) -> dict:
+    """
+    Check if the current time is between sunrise and sunset and return times.
+    
+    Args:
+        current_time (datetime.datetime): The current time to check
+        
+    Returns:
+        dict: Contains 'is_daylight' (bool), 'sunrise' (datetime), 'sunset' (datetime)
+    """
+    from astral import LocationInfo
+    from astral.sun import sun
+    
+    # Create location info
+    location = LocationInfo(
+        name=LOCATION_NAME,
+        region=LOCATION_COUNTRY,
+        timezone=str(TIMEZONE),
+        latitude=LOCATION_LATITUDE,
+        longitude=LOCATION_LONGITUDE
+    )
+    
+    # Get sunrise and sunset times for the current date
+    current_date = current_time.date()
+    solar_times = sun(location.observer, date=current_date, tzinfo=TIMEZONE)
+    sunrise = solar_times['sunrise']
+    sunset = solar_times['sunset']
+
+    is_day = sunrise <= current_time <= sunset
+    logger.info(f"Solar times for {current_date}: sunrise={sunrise.strftime('%H:%M')}, sunset={sunset.strftime('%H:%M')}, is_daylight={is_day}")
+
+    return {
+        'is_daylight': is_day,
+        'sunrise': sunrise,
+        'sunset': sunset
+    }
+
 
 def main():
     """
@@ -205,6 +246,14 @@ def main():
         # Get current time
         current_time = datetime.datetime.now(TIMEZONE)
         logger.info(f"Current time: {current_time}")
+
+        # Check if it's daylight (between sunrise and sunset)
+        daylight_info = is_daylight_with_times(current_time)
+        if not daylight_info['is_daylight']:
+            sunrise_time = daylight_info['sunrise'].strftime('%H:%M')
+            sunset_time = daylight_info['sunset'].strftime('%H:%M')
+            logger.info(f"It's nighttime - skipping power changes as inverters are automatically shut down: sunrise ({sunrise_time}), sunset ({sunset_time}).")
+            return True
 
         # Initialize storage interface
         storage = create_storage()

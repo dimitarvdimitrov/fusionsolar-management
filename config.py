@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 # AWS Secrets Manager Configuration
 AWS_REGION = os.environ.get("AWS_REGION", "eu-central-1")
-USE_SECRETS_MANAGER = os.environ.get("USE_SECRETS_MANAGER", "true").lower() == "true"
+USE_SECRETS_MANAGER = os.environ.get("USE_SECRETS_MANAGER", "false").lower() == "true"
 SECRETS_MANAGER_SECRET_NAME = os.environ.get("SECRETS_MANAGER_SECRET_NAME", "FusionSolarSecrets")
 
 def get_secret(secret_name):
@@ -42,7 +42,7 @@ def get_secret(secret_name):
         str: The secret value if successful, None otherwise
     """
     if not USE_SECRETS_MANAGER:
-        raise EnvironmentError(f"AWS Secrets Manager is not enabled and {secret_name} env var is not set. Set USE_SECRETS_MANAGER=true")
+        return None
 
     try:
         # Create a Secrets Manager client
@@ -144,3 +144,9 @@ S3_BUCKET_NAME = get_config_value("FUSIONSOLAR_S3_BUCKET_NAME", "fusionsolar-man
 S3_REGION = get_config_value("FUSIONSOLAR_S3_REGION", "eu-central-1")
 S3_ACCESS_KEY_ID = get_config_value("FUSIONSOLAR_S3_ACCESS_KEY_ID", allow_empty=True)
 S3_SECRET_ACCESS_KEY = get_config_value("FUSIONSOLAR_S3_SECRET_ACCESS_KEY", allow_empty=True)
+
+# Location configuration for sunrise/sunset calculations
+LOCATION_LATITUDE = float(get_config_value("FUSIONSOLAR_LOCATION_LATITUDE", "42.6420"))  # Karlovo, Bulgaria
+LOCATION_LONGITUDE = float(get_config_value("FUSIONSOLAR_LOCATION_LONGITUDE", "24.8083"))  # Karlovo, Bulgaria
+LOCATION_NAME = get_config_value("FUSIONSOLAR_LOCATION_NAME", "Karlovo")
+LOCATION_COUNTRY = get_config_value("FUSIONSOLAR_LOCATION_COUNTRY", "Bulgaria")

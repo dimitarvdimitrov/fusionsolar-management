@@ -147,3 +147,29 @@ AWS_REGION=eu-central-1
 ```
 
 With this configuration, the application will retrieve sensitive values from AWS Secrets Manager and fall back to environment variables or default values if needed.
+
+## Testing
+
+The project includes a test suite to verify functionality. Tests are located in the `tests/` directory.
+The tests can be run locally without requiring AWS credentials or production configuration.
+
+### Running Tests
+
+To run all tests:
+
+```bash
+# Install test dependencies (if not already installed)
+pip install -r requirements.txt
+
+# Run all tests
+pytest
+
+# Run tests with verbose output
+pytest -v
+
+# Run specific test file
+pytest tests/test_daylight.py
+
+# Run specific test
+pytest tests/test_daylight.py::TestDaylightCalculations::test_morning_is_daylight
+```

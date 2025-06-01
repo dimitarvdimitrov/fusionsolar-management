@@ -13,9 +13,9 @@ from abc import ABC, abstractmethod
 from typing import Optional
 from config import STORAGE_TYPE, S3_BUCKET_NAME, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, \
     LOCAL_STORAGE_DIR
-from price_analyzer import logger
 
 # Configure logging
+logger = logging.getLogger(__name__)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
