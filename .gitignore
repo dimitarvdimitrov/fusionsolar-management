@@ -173,4 +173,9 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+# Serverless Framework
 node_modules/
+.serverless/
+
+# JetBrains IDEs
+.idea/
