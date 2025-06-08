@@ -1,4 +1,5 @@
 # Use Ubuntu base image with newer GLIBC for Playwright compatibility
+# Platform is hardcoded to linux/amd64 for AWS Lambda deployment
 FROM --platform=linux/amd64 ubuntu:22.04
 
 # Install system dependencies
