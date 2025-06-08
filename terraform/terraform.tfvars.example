@@ -1,0 +1,8 @@
+# Example Terraform variables file
+# Copy this file to terraform.tfvars and customize the values
+
+aws_region      = "eu-central-1"
+instance_type   = "t3.small"
+key_name        = "test"
+s3_bucket_name  = "fusionsolar-management-data-unique-suffix"
+environment     = "production"

@@ -6,17 +6,87 @@ This repository contains tools for managing FusionSolar power systems based on e
 
 - Set up alerts to fire when a job hasn't ran in the past X hours (we need prices 6h before end of day).
 
-## Building a Docker Image
+## Deployment Options
+
+### EC2 Deployment (Recommended)
+
+The application is deployed on AWS EC2 using Terraform for infrastructure and Docker for containerization.
+
+#### Prerequisites
+
+- AWS CLI configured with appropriate permissions
+- Terraform installed (for infrastructure setup)
+- AWS Session Manager permissions for EC2 access
+
+#### Infrastructure Setup
+
+1. **Initial Infrastructure Deployment**:
+   ```bash
+   cd terraform
+   terraform init
+   terraform plan
+   terraform apply
+   ```
+
+2. **Team Setup** (for additional team members):
+   ```bash
+   cd terraform
+   terraform init  # Downloads shared state from S3
+   ```
+
+3. **Access the EC2 Instance**:
+   ```bash
+   aws ssm start-session --target i-06828cdc5fc69824d
+   ```
+
+#### Terraform State Management
+
+The infrastructure uses **shared Terraform state** stored in S3 for team collaboration:
+
+- **State Location**: `s3://fusionsolar-management-terraform-state/infrastructure/terraform.tfstate`
+- **Benefits**: Team members share the same infrastructure state
+- **Team Workflow**: All team members run `terraform init` to access shared state
+- **Coordination**: Coordinate `terraform apply` operations to avoid conflicts
+
+**Important**: Local `terraform.tfstate` files are not used. All state is stored in S3.
+
+#### Application Deployment
+
+Use the deployment script to deploy code changes:
+
+```bash
+./deploy.sh
+```
+
+The deployment script:
+- Packages the application code
+- Uploads to S3 temporarily
+- Downloads and deploys on the EC2 instance
+- Rebuilds Docker images
+- Restarts containers
+- Shows deployment status
+
+#### Infrastructure Details
+
+- **Instance Type**: Private EC2 instance (no public IP)
+- **Networking**: Private subnet with NAT Gateway for outbound access
+- **Security**: Access via AWS Session Manager only
+- **Storage**: S3 bucket for data persistence
+- **Secrets**: AWS Secrets Manager for credential storage
+
+### Local Development
+
+#### Building a Docker Image
 
 ```bash
 docker build -t fusionsolar_fusionsolar:latest .
 ```
 
-## Running the Application
+#### Running the Application
 
-You can run the application in two different modes:
+You can run the application locally in two different modes:
 
-### One-time Execution
+#### One-time Execution
 
 To run the price analyzer once and exit:
 
@@ -30,7 +100,7 @@ This will:
 3. Adjust FusionSolar power settings based on price thresholds
 4. Exit after completion
 
-### Continuous Operation
+#### Continuous Operation
 
 To run the application continuously with scheduled tasks:
 

@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  fusionsolar-management:
+    build: .
+    restart: unless-stopped
+    environment:
+      # AWS Secrets Manager
+      - USE_SECRETS_MANAGER=true
+      - AWS_REGION=eu-central-1
+      
+    volumes:
+      - ./data:/app/data
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://httpbin.org/status/200', timeout=10)"]
+      interval: 5m
+      timeout: 30s
+      retries: 3
+      start_period: 2m
