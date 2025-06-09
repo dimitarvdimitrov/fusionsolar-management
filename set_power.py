@@ -114,7 +114,7 @@ class SetPower:
         with sync_playwright() as playwright:
             logger.info("Initializing Playwright")
             logger.info("Launching browser")
-            browser = playwright.chromium.launch(slow_mo=200)
+            browser = playwright.chromium.launch(slow_mo=200, args=["--disable-gpu", "--single-process"])
             logger.info("Browser launched successfully")
 
             try:
