@@ -25,7 +25,8 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Install Playwright and its dependencies
-RUN python -m playwright install chrome
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN python -m playwright install chromium
 RUN python -m playwright install-deps
 
 # Copy all Python source files except unzip_requirements.py (not needed for containers)
