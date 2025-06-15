@@ -12,39 +12,100 @@ This repository contains tools for managing FusionSolar power systems based on e
 docker build -t fusionsolar_fusionsolar:latest .
 ```
 
-## Running the Application
+## Deployment
 
-You can run the application in two different modes:
+The application is designed to run as AWS Lambda functions for automated, serverless operation.
 
-### One-time Execution
+### AWS Lambda Deployment
 
-To run the price analyzer once and exit:
+The application consists of two Lambda functions deployed using the Serverless Framework:
+
+1. **priceFetcher** - Fetches electricity prices for the next day (runs every hour at 30 minutes past)
+2. **priceAnalyzer** - Analyzes prices and adjusts power settings (runs every hour on the hour)
+
+#### Prerequisites
+
+- AWS CLI configured with appropriate credentials
+- Docker installed (for building container images)
+- Serverless Framework: `npm install -g serverless`
+
+#### Deployment Steps
+
+1. **Install prerequisites:**
+   ```bash
+   # For macOS with Homebrew:
+   brew install node
+   npm install -g serverless
+   
+   # For Ubuntu/Debian:
+   sudo apt update && sudo apt install nodejs npm
+   npm install -g serverless
+   ```
+
+2. **Build and deploy the Lambda functions:**
+   ```bash
+   npm install
+   serverless deploy
+   ```
+
+3. **The deployment will:**
+   - Build a Docker container image with all dependencies (including Playwright)
+   - Push the image to AWS ECR
+   - Create Lambda functions using the container image
+   - Set up scheduled triggers (EventBridge rules)
+   - Configure IAM permissions for S3 and Secrets Manager access
+
+#### Configuration
+
+The Lambda functions use environment variables + AWS SecretsManager for configuration. Environment vars are in serverless.yml.
+
+#### Testing and Management
+
+```bash
+# Test deployed functions
+serverless invoke -f priceFetcher
+serverless invoke -f priceAnalyzer
+
+# View logs
+serverless logs -f priceFetcher
+serverless logs -f priceAnalyzer -t  # stream logs
+
+# Deploy individual functions
+serverless deploy function -f priceFetcher
+
+# Remove all resources
+serverless remove
+```
+
+#### Scheduled Execution
+
+The Lambda functions run automatically:
+- **priceFetcher**: Every hour at 30 minutes past (`cron(30 * * * ? *)`)
+- **priceAnalyzer**: Every hour on the hour (`cron(0 * * * ? *)`)
+
+#### Container-Based Deployment
+
+The Lambda functions use container images instead of zip packages to support complex dependencies like Playwright:
+
+- **Base Image**: Ubuntu 22.04 (for GLIBC compatibility with Playwright)
+- **Dependencies**: Python 3, Playwright with Chromium, all Python packages
+- **Size**: Optimized for Lambda's 10GB container limit
+
+### Local Development
+
+You can still run the application locally for development and testing:
+
+#### One-time Execution
 
 ```bash
 python price_analyzer.py
 ```
 
-This will:
-1. Fetch current electricity prices
-2. Analyze the price data
-3. Adjust FusionSolar power settings based on price thresholds
-4. Exit after completion
-
-### Continuous Operation
-
-To run the application continuously with scheduled tasks:
+#### Continuous Operation
 
 ```bash
 python scheduler.py
 ```
-
-This mode:
-1. Keeps the application running in the background
-2. Automatically fetches price data at scheduled intervals
-3. Applies power adjustments based on the configuration settings
-4. Continues running until manually stopped
-
-The scheduler ensures that price data is fetched regularly and power adjustments are made according to your configured price thresholds.
 
 ## Storage Options
 

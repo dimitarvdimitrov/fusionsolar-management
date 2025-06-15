@@ -1,0 +1,73 @@
+service: fusionsolar
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  region: ${opt:region, 'eu-central-1'}
+  memorySize: 512
+  timeout: 900 # 15 minutes - max possible, browser operations can take 1-2 minutes
+  ecr:
+    images:
+      fusionsolar-lambda:
+        path: ./
+        file: Dockerfile.lambda
+  environment:
+    # Environment variables for both functions
+    FUSIONSOLAR_STORAGE_TYPE: s3
+    FUSIONSOLAR_S3_REGION: eu-central-1
+    FUSIONSOLAR_S3_BUCKET_NAME: fusionsolar-management
+    USE_SECRETS_MANAGER: true
+    SECRETS_MANAGER_SECRET_NAME: FusionSolarSecrets
+    TZ: Europe/Sofia
+
+  # Define IAM permissions
+  iam:
+    role:
+      statements:
+        # CloudWatch Logs permissions
+        - Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: 'arn:aws:logs:*:*:*'
+        
+        # S3 permissions (if using S3 storage)
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+            - s3:PutObject
+            - s3:ListBucket
+          Resource:
+            - "arn:aws:s3:::${self:provider.environment.FUSIONSOLAR_S3_BUCKET_NAME}"
+            - "arn:aws:s3:::${self:provider.environment.FUSIONSOLAR_S3_BUCKET_NAME}/*"
+        
+        # Secrets Manager permissions (if using Secrets Manager)
+        - Effect: Allow
+          Action:
+            - secretsmanager:GetSecretValue
+          Resource: '*'
+
+functions:
+  priceFetcher:
+    image:
+      name: fusionsolar-lambda
+      command:
+        - price_fetcher_lambda.lambda_handler
+    description: Fetches electricity prices for the next day
+    events:
+      - schedule:
+          rate: cron(30 * * * ? *)  # Run every hour at 30 minutes past
+          enabled: true
+
+  priceAnalyzer:
+    image:
+      name: fusionsolar-lambda
+      command:
+        - price_analyzer_lambda.lambda_handler
+    description: Analyzes electricity prices and adjusts power settings
+    events:
+      - schedule:
+          rate: cron(0 * * * ? *)  # Run every hour on the hour
+          enabled: true

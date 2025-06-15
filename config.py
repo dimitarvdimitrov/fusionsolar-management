@@ -64,11 +64,9 @@ def get_secret(secret_name):
                 # If the secret name is in the dictionary, return that value
                 if secret_name in secret_dict:
                     return secret_dict[secret_name]
-                # Otherwise return the whole JSON string
-                return secret
+                return None
             except json.JSONDecodeError:
-                # If not JSON, return the raw string
-                return secret
+                return None
         else:
             raise ValueError(f"Secret {SECRETS_MANAGER_SECRET_NAME} is not in string format, which is not supported")
 

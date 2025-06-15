@@ -1,0 +1,36 @@
+# Use Ubuntu base image with newer GLIBC for Playwright compatibility
+# Platform is hardcoded to linux/amd64 for AWS Lambda deployment
+FROM --platform=linux/amd64 ubuntu:22.04
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set python3 as default python
+RUN ln -sf /usr/bin/python3 /usr/bin/python
+
+# Install AWS Lambda Runtime Interface Client
+RUN pip install awslambdaric
+
+# Set Lambda task root
+ENV LAMBDA_TASK_ROOT=/var/task
+WORKDIR ${LAMBDA_TASK_ROOT}
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install Playwright and its dependencies
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN python -m playwright install chromium
+RUN python -m playwright install-deps
+
+# Copy all Python source files except unzip_requirements.py (not needed for containers)
+COPY *.py ./
+
+# Set the entrypoint to Lambda Runtime Interface Client
+ENTRYPOINT ["/usr/bin/python", "-m", "awslambdaric"]
