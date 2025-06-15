@@ -18,6 +18,7 @@ import price_analyzer
 from storage_interface import create_storage
 from price_repository import PriceRepository
 from telegram_notifier import TelegramNotifier  # Import the new TelegramNotifier class
+from config import PRICE_THRESHOLD  # Import price threshold for low power period calculation
 
 # Configure logging
 logging.basicConfig(
@@ -45,6 +46,33 @@ class Scheduler:
         self.next_day_prices_fetched = self.repository.prices_for_day_exist(datetime.datetime.now() + datetime.timedelta(days=1))
         # Create a TelegramNotifier instance
         self.telegram_notifier = TelegramNotifier()
+    
+    @staticmethod
+    def _format_next_day_prices_message(price_data, next_day: datetime.datetime) -> str:
+        """
+        Format the Telegram notification message for next day prices including low power periods.
+        
+        Args:
+            price_data: PriceData object containing price information
+            next_day: datetime object representing the next day
+            
+        Returns:
+            str: Formatted message string for Telegram notification
+        """
+        # Calculate low power periods for the notification
+        low_power_periods = price_analyzer.get_low_power_periods(price_data, PRICE_THRESHOLD)
+        
+        # Format the low power periods for display
+        if low_power_periods:
+            periods_text = "\n".join([
+                f"  • {start.strftime('%H:%M')} - {end.strftime('%H:%M')}"
+                for start, end in low_power_periods
+            ])
+            low_power_info = f"\n\n🔋 Периоди с ниска мощност:\n{periods_text}"
+        else:
+            low_power_info = "\n\n🔋 Няма периоди с ниска мощност за утре."
+        
+        return f"📊 Успешно изтеглени цени за {next_day.strftime('%Y-%m-%d')}:\n{price_data}{low_power_info}"
     
     def run_price_analyzer(self) -> bool:
         """
@@ -87,7 +115,8 @@ class Scheduler:
             
             if price_data and price_data.entries:
                 if not self.next_day_prices_fetched:
-                    self.telegram_notifier.send_message(f"📊 Успешно изтеглени цени за {next_day.strftime('%Y-%m-%d')}:\n{price_data}")
+                    message = self._format_next_day_prices_message(price_data, next_day)
+                    self.telegram_notifier.send_message(message)
                     self.next_day_prices_fetched = True
                     
                 logger.info(f"Successfully fetched {len(price_data.entries)} price entries for {next_day.strftime('%Y-%m-%d')}")
