@@ -194,6 +194,66 @@ def decide_power_setting(price_data: PriceData, current_time: datetime.datetime)
         # No future price entries available
         raise ValueError(f"Error determining power setting: {e}") from e
 
+def get_low_power_periods(price_data: PriceData, price_threshold: float) -> List[tuple]:
+    """
+    Analyze PriceData to determine all time periods when power will be set to low power.
+    
+    Args:
+        price_data (PriceData): Object containing price information
+        price_threshold (float): The price threshold below which power is set to low
+        
+    Returns:
+        List[tuple]: List of (start_time, end_time) tuples representing low power periods.
+                    Each tuple contains datetime objects marking the start and end of a low power period.
+                    
+    Examples:
+        - No low power periods: []
+        - Single hour: [(datetime(2025, 1, 1, 14, 0), datetime(2025, 1, 1, 15, 0))]
+        - Multiple ranges: [(datetime(2025, 1, 1, 2, 0), datetime(2025, 1, 1, 5, 0)), 
+                           (datetime(2025, 1, 1, 14, 0), datetime(2025, 1, 1, 16, 0))]
+    """
+    if not price_data.entries:
+        return []
+    
+    low_power_periods = []
+    current_range_start = None
+    
+    # Sort entries by time to ensure correct ordering
+    sorted_entries = sorted(price_data.entries, key=lambda entry: entry.time)
+    
+    for i, entry in enumerate(sorted_entries):
+        is_low_power = entry.price < price_threshold
+        
+        if is_low_power and current_range_start is None:
+            # Start of a new low power period
+            current_range_start = entry.time
+        elif not is_low_power and current_range_start is not None:
+            # End of current low power period
+            # The end time is the start of the current hour (since we're ending the previous period)
+            low_power_periods.append((current_range_start, entry.time))
+            current_range_start = None
+        elif is_low_power and current_range_start is not None:
+            # Continue current low power period - check if this is consecutive
+            prev_entry = sorted_entries[i - 1]
+            expected_next_time = prev_entry.time + datetime.timedelta(hours=1)
+            
+            # If there's a gap in time, end the current period and start a new one
+            if entry.time != expected_next_time:
+                # End the previous period at the expected next time
+                low_power_periods.append((current_range_start, expected_next_time))
+                # Start a new period
+                current_range_start = entry.time
+    
+    # Handle case where the last entry is still in a low power period
+    if current_range_start is not None:
+        # End the period one hour after the last entry
+        last_entry = sorted_entries[-1]
+        end_time = last_entry.time + datetime.timedelta(hours=1)
+        low_power_periods.append((current_range_start, end_time))
+    
+    return low_power_periods
+
+
 def is_daylight_with_times(current_time: datetime.datetime) -> dict:
     """
     Check if the current time is between sunrise and sunset and return times.
