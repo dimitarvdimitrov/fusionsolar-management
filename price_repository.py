@@ -81,8 +81,7 @@ class PriceRepository:
         # 2. If local data doesn't exist, fetch from online source and save locally
         logger.info(f"No stored data found for {target_date}, fetching from online source")
         self._fetch_and_store_data()
-        logger.info(f"Successfully fetched and stored price data for {target_date}")
-        
+
         # 3. Try to get local data again after fetching
         local_data = self._get_stored_data(target_date)
         if local_data:
@@ -144,16 +143,18 @@ class PriceRepository:
             
             # 2. Parse the data into a PriceData object
             price_data = self._parse_price_table(html_content)
-            
+
             # Get current time in the configured timezone
             data_date = price_data.get_date()
-            
+            logger.info(f"Successfully fetched price data from online source; date {data_date.strftime('%Y-%m-%d')}")
+
             # Check if we already have this data stored
             existing_data = self._get_stored_data(data_date)
             if existing_data:
                 logger.info(f"Price data for {data_date.strftime('%Y-%m-%d')} already exists in storage")
                 if existing_data.entries != price_data.entries:
                     raise Exception(f"Price data for {data_date.strftime('%Y-%m-%d')} already exists but is different: existing {existing_data} != fetched {price_data}")
+                return
             
             # 3. Store the data if it doesn't exist
             self._store_data(data_date, price_data, html_content)
