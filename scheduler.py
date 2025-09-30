@@ -124,11 +124,33 @@ class Scheduler:
             else:
                 self.next_day_prices_fetched = False
                 logger.warning(f"No price entries found for {next_day.strftime('%Y-%m-%d')}")
+                
+                # Send Telegram notification if no price data found after 6 PM
+                current_hour = datetime.datetime.now().hour
+                if current_hour >= 18:  # 6 PM or later
+                    error_message = f"⚠️ Няма намерени цени за {next_day.strftime('%Y-%m-%d')}. Моля проверете дали данните са налични."
+                    try:
+                        self.telegram_notifier.send_message(error_message)
+                        logger.info("Sent Telegram notification for missing price data")
+                    except Exception as telegram_error:
+                        logger.error(f"Failed to send Telegram notification for missing price data: {telegram_error}")
+                
                 return False
                 
         except Exception as e:
             self.next_day_prices_fetched = False
             logger.error(f"Error fetching next day prices: {e}")
+            
+            # Send Telegram notification if fetching fails after 6 PM
+            current_hour = datetime.datetime.now().hour
+            if current_hour >= 18:  # 6 PM or later
+                error_message = f"❌ Грешка при изтегляне на цените за {next_day.strftime('%Y-%m-%d')}: {str(e)}"
+                try:
+                    self.telegram_notifier.send_message(error_message)
+                    logger.info("Sent Telegram error notification for failed price fetching")
+                except Exception as telegram_error:
+                    logger.error(f"Failed to send Telegram error notification: {telegram_error}")
+            
             return False
 
     def schedule_jobs(self) -> None:

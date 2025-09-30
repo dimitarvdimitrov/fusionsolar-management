@@ -12,8 +12,7 @@ import os
 import datetime
 from typing import Optional, Tuple
 import requests
-from io import StringIO
-import pandas as pd
+import json
 import logging
 from config import (
     TIMEZONE, 
@@ -139,10 +138,10 @@ class PriceRepository:
         """
         try:
             # 1. Fetch data from online source
-            html_content = self._fetch_online_data()
+            json_content = self._fetch_online_data()
             
             # 2. Parse the data into a PriceData object
-            price_data = self._parse_price_table(html_content)
+            price_data = self._parse_price_table(json_content)
 
             # Get current time in the configured timezone
             data_date = price_data.get_date()
@@ -157,7 +156,7 @@ class PriceRepository:
                 return
             
             # 3. Store the data if it doesn't exist
-            self._store_data(data_date, price_data, html_content)
+            self._store_data(data_date, price_data, json_content)
             
         except Exception as e:
             logger.error(f"Error in fetch_and_store_data: {e}")
@@ -165,18 +164,17 @@ class PriceRepository:
     
     def _fetch_online_data(self) -> str:
         """
-        Fetch the HTML page containing electricity price information.
+        Fetch the JSON data containing electricity price information.
         
         Returns:
-            str: HTML content of the price page
+            str: JSON content of the price data
             
         Raises:
-            Exception: If the page cannot be fetched
+            Exception: If the data cannot be fetched
         """
         try:
-            # URL for the electricity price data
-            # use /en to get EUR prices
-            url = "https://ibex.bg/en/"
+            # URL for the electricity price data JSON API
+            url = "https://ibex.bg/Ext/IDM_Homepage/fetch_dam.php?lang=en&num=40"
             
             # Set up headers to mimic a browser request
             headers = {
@@ -189,68 +187,53 @@ class PriceRepository:
             response.raise_for_status()  # Raise an exception for HTTP errors
             
             # Get the content as text
-            html_content = response.text
-            logger.info(f"Successfully fetched price data, content length: {len(html_content)} chars")
+            json_content = response.text
+            logger.info(f"Successfully fetched price data, content length: {len(json_content)} chars")
             
-            return html_content
+            return json_content
             
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to fetch price data: {e}")
             raise Exception(f"Error fetching price data: {e}") from e
     
-    def _parse_price_table(self, html_content: str) -> PriceData:
+    def _parse_price_table(self, json_content: str) -> PriceData:
         """
-        Parse the HTML content to extract price data from tables.
+        Parse the JSON content to extract price data.
         
         Args:
-            html_content (str): HTML content containing price tables
-                Note: This parameter is kept for compatibility but not used.
-                Instead, we read directly from the file path.
+            json_content (str): JSON content containing price data array
         
         Returns:
             PriceData: Object containing structured price information
         """
         try:
-            # Use pandas to read all HTML tables from the file
-            tables = pd.read_html(StringIO(html_content))
-            logger.info(f"Found {len(tables)} tables in the HTML file")
-            
-            # Based on our analysis, Table 1 (index 1) contains the price data
-            if len(tables) < 2:
-                raise Exception("Expected price table not found in HTML file")
-            
-            # Get the price table
-            price_table = tables[1]
-            logger.info(f"Processing price table with shape: {price_table.shape}")
+            # Parse JSON content
+            price_list = json.loads(json_content)
+            logger.info(f"Found {len(price_list)} price entries in JSON data")
             
             tz = IBEX_TIMEZONE
             
-            # Create PriceEntry objects from table rows
+            # Create PriceEntry objects from JSON array
             entries = []
-            for _, row in price_table.iterrows():
+            for item in price_list:
                 try:
-                    # Extract date, time and price from the row
-                    date_str = str(row[0])  # First column is date
-                    time_str = str(row[1])  # Second column is time
-                    price_str = str(row[2])  # Third column is price
+                    # Extract date and price from the JSON object
+                    date_str = item['date']  # Format: "YYYY-MM-DD HH:MM:SS"
+                    price_value = float(item['price'])
                     
-                    # Create full datetime string and parse it
-                    datetime_str = f"{date_str} {time_str}"
-                    dt = datetime.datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
+                    # Parse datetime string
+                    dt = datetime.datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
                     
                     # Localize the datetime to the specified timezone
                     dt = tz.localize(dt)
                     
-                    # Convert price to float
-                    price = float(price_str)
-                    
                     # Create and add PriceEntry
-                    entry = PriceEntry(time=dt, price=price)
+                    entry = PriceEntry(time=dt, price=price_value)
                     entries.append(entry)
                     logger.debug(f"Parsed entry: {entry}")
                     
                 except Exception as e:
-                    logger.warning(f"Error parsing row {row}: {e}")
+                    logger.warning(f"Error parsing JSON item {item}: {e}")
             
             logger.info(f"Successfully parsed {len(entries)} price entries")
             
@@ -260,23 +243,23 @@ class PriceRepository:
                 fetch_time=datetime.datetime.now(tz)
             )
             
-            # If no entries were parsed, fall back to dummy data
+            # If no entries were parsed, raise exception
             if not entries:
-                raise Exception("No price entries could be parsed from the table")
+                raise Exception("No price entries could be parsed from the JSON data")
             
             return price_data
             
         except Exception as e:
-            raise Exception(f"Error parsing price table: {e}") from e
+            raise Exception(f"Error parsing price JSON: {e}") from e
     
-    def _store_data(self, date: datetime.datetime, price_data: PriceData, html_content: str):
+    def _store_data(self, date: datetime.datetime, price_data: PriceData, json_content: str):
         """
         Store price data using the configured storage implementation.
         
         Args:
             date (datetime.datetime): The date for which the data is relevant
             price_data (PriceData): The price data to store
-            html_content (str): The raw HTML content to store, if provided
+            json_content (str): The raw JSON content to store, if provided
             
         Returns:
             None
@@ -285,24 +268,20 @@ class PriceRepository:
             Exception: If the data cannot be stored
         """
         try:
-            # Generate the filename from the date
-
-            # Convert PriceData to JSON using dataclass_json
-
             # Write the data to storage
             parsed_filename = self._generate_parsed_filename(date)
-            json_data = price_data.to_json(indent=2)
-            if self.storage.write_text(parsed_filename, json_data):
+            parsed_json_data = price_data.to_json(indent=2)
+            if self.storage.write_text(parsed_filename, parsed_json_data):
                 logger.info(f"Successfully stored price data to {parsed_filename}")
             else:
                 raise Exception(f"Failed to write price data to {parsed_filename}")
 
-            # Store raw HTML content
+            # Store raw JSON content
             raw_filename = self._generate_raw_filename(date)
-            if self.storage.write_text(raw_filename, html_content):
-                logger.info(f"Successfully stored raw HTML content to {raw_filename}")
+            if self.storage.write_text(raw_filename, json_content):
+                logger.info(f"Successfully stored raw JSON content to {raw_filename}")
             else:
-                logger.warning(f"Failed to write raw HTML content to {raw_filename}")
+                logger.warning(f"Failed to write raw JSON content to {raw_filename}")
             
         except Exception as e:
             logger.error(f"Error storing price data: {e}")
@@ -332,7 +311,7 @@ class PriceRepository:
         Returns:
             str: The generated filename
         """
-        return f"ibex.bg-{date.strftime('%Y-%m-%d')}.html"
+        return f"ibex.bg-{date.strftime('%Y-%m-%d')}.raw.json"
 
     def prices_for_day_exist(self, date: datetime.datetime) -> bool:
         """
