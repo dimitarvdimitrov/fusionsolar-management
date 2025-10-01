@@ -298,7 +298,7 @@ class PriceRepository:
         Returns:
             str: The generated filename
         """
-        return f"ibex.bg-{date.strftime('%Y-%m-%d')}.json"
+        return f"prices/parsed/ibex.bg-{date.strftime('%Y-%m-%d')}.json"
     
     @staticmethod
     def _generate_raw_filename(date: datetime.datetime) -> str:
@@ -311,7 +311,7 @@ class PriceRepository:
         Returns:
             str: The generated filename
         """
-        return f"ibex.bg-{date.strftime('%Y-%m-%d')}.raw.json"
+        return f"prices/raw/ibex.bg-{date.strftime('%Y-%m-%d')}.raw.json"
 
     def prices_for_day_exist(self, date: datetime.datetime) -> bool:
         """
