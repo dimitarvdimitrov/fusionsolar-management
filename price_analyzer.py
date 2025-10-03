@@ -112,12 +112,92 @@ class PriceData:
                 closest_entry = entry
             
         return closest_entry
-    
-    def __str__(self) -> str:
-        """String representation of the price data collection"""
-        entries_str = "\n".join([str(entry) for entry in self.entries])
-        return f"PriceData: {len(self.entries)} entries, fetched at {self.fetch_time}:\n{entries_str}"
 
+    def __str__(self) -> str:
+        """String representation of the price data collection with visual timeline"""
+        if not self.entries:
+            return f"PriceData: No entries, fetched at {self.fetch_time}"
+
+        # Get price range for scaling
+        prices = [entry.price for entry in self.entries]
+        min_price = min(prices)
+        max_price = max(prices)
+
+        # Group entries by 2-hour periods
+        period_prices = {}
+        for entry in self.entries:
+            period = entry.time.hour // 2  # 0-11 for 12 periods
+            if period not in period_prices:
+                period_prices[period] = []
+            period_prices[period].append(entry.price)
+
+        # Create visual timeline with 2-hour periods
+        timeline = []
+        timeline.append("Period    Avg   Min   Max")
+        timeline.append("------   ----  ----  ----")
+
+        for period in range(12):  # 12 periods of 2 hours each
+            if period in period_prices:
+                prices = period_prices[period]
+                avg_price = sum(prices) / len(prices)
+                min_period_price = min(prices)
+                max_period_price = max(prices)
+                
+                start_hour = period * 2
+                end_hour = start_hour + 1
+                period_str = f"{start_hour:02d}-{end_hour:02d}h"
+                
+                timeline.append(f"{period_str}   {avg_price:4.1f}  {min_period_price:4.1f}  {max_period_price:4.1f}")
+            else:
+                # No data for this period
+                start_hour = period * 2
+                end_hour = start_hour + 1
+                period_str = f"{start_hour:02d}-{end_hour:02d}h"
+                timeline.append(f"{period_str}    --.-   --.-   --.-")
+
+        # Add summary info
+        timeline.append("")
+        avg_price = sum(prices) / len(prices)
+        timeline.append(f"Min: {min_price:.1f}  Max: {max_price:.1f}  Avg: {avg_price:.1f} EUR/MWh")
+        timeline.append(f"Entries: {len(self.entries)}")
+
+        # Return the timeline as plain text
+        timeline_text = "\n".join(timeline)
+        return timeline_text
+
+    def llm_prompt(self) -> str:
+        """Generate a VLM prompt to create a price chart image"""
+        if not self.entries:
+            return f"PriceData: No entries, fetched at {self.fetch_time}"
+
+        # Get price data for the prompt
+        prices = [entry.price for entry in self.entries]
+        min_price = min(prices)
+        max_price = max(prices)
+        avg_price = sum(prices) / len(prices)
+
+        # Create hourly price list for the prompt
+        hourly_data = []
+        for i, entry in enumerate(self.entries):
+            hourly_data.append(f"{i:02d}:00 → {entry.price:.1f}")
+
+        # Generate VLM prompt
+        prompt = f"""Create a clean line chart showing electricity prices over 24 hours:
+
+Data points (Hour → Price in EUR/MWh):
+{', '.join(hourly_data)}
+
+Chart specifications:
+- X-axis: Hours 00-23 with clear labels every 4 hours
+- Y-axis: Price range {min_price:.1f} to {max_price:.1f} EUR/MWh
+- Blue line chart with data points marked
+- Grid lines for easy reading
+- Title: "Electricity Prices - 24 Hour Profile"
+- Subtitle: "Min: {min_price:.1f} | Avg: {avg_price:.1f} | Max: {max_price:.1f} EUR/MWh"
+- Clean white background
+- Styling suitable for a telegram message"""
+
+        return prompt
 # Configuration constants are now imported from config.py
 
 # Create a TelegramNotifier instance
@@ -220,6 +300,8 @@ def get_low_power_periods(price_data: PriceData, price_threshold: float) -> List
     
     # Sort entries by time to ensure correct ordering
     sorted_entries = sorted(price_data.entries, key=lambda entry: entry.time)
+
+    gap_between_entries = datetime.timedelta(seconds=min([max(1, int((sorted_entries[i].time - sorted_entries[i-1].time).total_seconds())) for i in range(1, len(sorted_entries))]))
     
     for i, entry in enumerate(sorted_entries):
         is_low_power = entry.price < price_threshold
@@ -235,7 +317,7 @@ def get_low_power_periods(price_data: PriceData, price_threshold: float) -> List
         elif is_low_power and current_range_start is not None:
             # Continue current low power period - check if this is consecutive
             prev_entry = sorted_entries[i - 1]
-            expected_next_time = prev_entry.time + datetime.timedelta(hours=1)
+            expected_next_time = prev_entry.time + gap_between_entries
             
             # If there's a gap in time, end the current period and start a new one
             if entry.time != expected_next_time:
@@ -248,7 +330,7 @@ def get_low_power_periods(price_data: PriceData, price_threshold: float) -> List
     if current_range_start is not None:
         # End the period one hour after the last entry
         last_entry = sorted_entries[-1]
-        end_time = last_entry.time + datetime.timedelta(hours=1)
+        end_time = last_entry.time + gap_between_entries
         low_power_periods.append((current_range_start, end_time))
     
     return low_power_periods
