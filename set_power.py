@@ -49,7 +49,7 @@ class Screenshotter:
         try:
             time.sleep(1)  # Delay to ensure the page is fully loaded
             # Create timestamp for the filename
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            timestamp = datetime.datetime.now(TIMEZONE).strftime("%Y-%m-%d_%H-%M-%S")
 
             # Create a filename with timestamp and action name
             filename = f"{timestamp}_{action_name}.png"
