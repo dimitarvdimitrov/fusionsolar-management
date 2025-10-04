@@ -69,5 +69,5 @@ functions:
     description: Analyzes electricity prices and adjusts power settings
     events:
       - schedule:
-          rate: cron(0 * * * ? *)  # Run every hour on the hour
+          rate: cron(*/15 * * * ? *)  # Run every 15 minutes
           enabled: true
