@@ -300,8 +300,6 @@ def get_low_power_periods(price_data: PriceData, price_threshold: float) -> List
     
     # Sort entries by time to ensure correct ordering
     sorted_entries = sorted(price_data.entries, key=lambda entry: entry.time)
-
-    gap_between_entries = datetime.timedelta(seconds=min([max(1, int((sorted_entries[i].time - sorted_entries[i-1].time).total_seconds())) for i in range(1, len(sorted_entries))]))
     
     for i, entry in enumerate(sorted_entries):
         is_low_power = entry.price < price_threshold
@@ -311,13 +309,13 @@ def get_low_power_periods(price_data: PriceData, price_threshold: float) -> List
             current_range_start = entry.time
         elif not is_low_power and current_range_start is not None:
             # End of current low power period
-            # The end time is the start of the current hour (since we're ending the previous period)
+            # The end time is the start of the current entry (since we're ending the previous period)
             low_power_periods.append((current_range_start, entry.time))
             current_range_start = None
         elif is_low_power and current_range_start is not None:
             # Continue current low power period - check if this is consecutive
             prev_entry = sorted_entries[i - 1]
-            expected_next_time = prev_entry.time + gap_between_entries
+            expected_next_time = prev_entry.time + datetime.timedelta(minutes=15)
             
             # If there's a gap in time, end the current period and start a new one
             if entry.time != expected_next_time:
@@ -328,9 +326,9 @@ def get_low_power_periods(price_data: PriceData, price_threshold: float) -> List
     
     # Handle case where the last entry is still in a low power period
     if current_range_start is not None:
-        # End the period one hour after the last entry
+        # End the period 15 minutes after the last entry (assuming 15-minute intervals)
         last_entry = sorted_entries[-1]
-        end_time = last_entry.time + gap_between_entries
+        end_time = last_entry.time + datetime.timedelta(minutes=15)
         low_power_periods.append((current_range_start, end_time))
     
     return low_power_periods
