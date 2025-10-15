@@ -88,30 +88,63 @@ class PriceData:
     def get_closest_entry(self, target_time: datetime.datetime) -> Optional[PriceEntry]:
         """
         Find the closest entry in the future relative to the given time.
-        
+
         Args:
             target_time (datetime.datetime): The target time to find the closest future entry for
-            
+
         Returns:
             Optional[PriceEntry]: The closest future price entry
-            
+
         Raises:
             ValueError: If there are no future entries available
         """
         if not self.entries:
             raise ValueError("No price entries available")
-            
+
         # Find the closest entry to the target time
         closest_entry = None
         min_time_diff = float('inf')
-        
+
         for entry in self.entries:
             time_diff = abs((entry.time - target_time).total_seconds())
             if time_diff < min_time_diff:
                 min_time_diff = time_diff
                 closest_entry = entry
-            
+
         return closest_entry
+
+    def get_hourly_average(self, target_time: datetime.datetime) -> float:
+        """
+        Calculate the average price for the hour containing the given time.
+
+        Args:
+            target_time (datetime.datetime): The target time to calculate the hourly average for
+
+        Returns:
+            float: The average price for the hour
+
+        Raises:
+            ValueError: If there are no entries for the target hour
+        """
+        if not self.entries:
+            raise ValueError("No price entries available")
+
+        # Get the hour start and end times
+        hour_start = target_time.replace(minute=0, second=0, microsecond=0)
+        hour_end = hour_start + datetime.timedelta(hours=1)
+
+        # Find all entries within this hour
+        hourly_entries = [
+            entry for entry in self.entries
+            if hour_start <= entry.time < hour_end
+        ]
+
+        if not hourly_entries:
+            raise ValueError(f"No price entries found for hour starting at {hour_start}")
+
+        # Calculate and return the average
+        avg_price = sum(entry.price for entry in hourly_entries) / len(hourly_entries)
+        return avg_price
 
     def __str__(self) -> str:
         """String representation of the price data collection with visual timeline"""
