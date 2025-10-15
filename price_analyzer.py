@@ -239,6 +239,24 @@ telegram_notifier = TelegramNotifier()
 # Function definitions
 # -------------------
 
+def should_use_low_power(price_data: PriceData, target_time: datetime.datetime, price_threshold: float) -> bool:
+    """
+    Determine if low power should be used at the given time based on hourly average.
+
+    Args:
+        price_data (PriceData): Object containing price information
+        target_time (datetime.datetime): The time to check
+        price_threshold (float): The price threshold below which power should be low
+
+    Returns:
+        bool: True if low power should be used, False otherwise
+
+    Raises:
+        ValueError: If no price data is available for the target hour
+    """
+    hourly_avg = price_data.get_hourly_average(target_time)
+    return hourly_avg < price_threshold
+
 def fetch_price_data(current_time: datetime.datetime, storage: StorageInterface) -> PriceData:
     """
     Fetch price data using the PriceRepository.
@@ -270,100 +288,88 @@ def fetch_price_data(current_time: datetime.datetime, storage: StorageInterface)
 
 def decide_power_setting(price_data: PriceData, current_time: datetime.datetime) -> str:
     """
-    Decide the power setting based on the price for the next hour.
-    
+    Decide the power setting based on the hourly average price for the current hour.
+
     Args:
         price_data (PriceData): Object containing price information
         current_time (datetime.datetime): The current time
-    
+
     Returns:
         str: The power setting to use (LOW_POWER_SETTING or HIGH_POWER_SETTING)
     """
-
     try:
-        # Find the closest future price entry
-        next_price_entry = price_data.get_closest_entry(current_time)
-        
-        if not next_price_entry:
-            raise ValueError("No price entry found")
-            
-        # Check if the closest entry is more than 2 hours away from now
-        time_diff = abs((next_price_entry.time - current_time).total_seconds()) / 3600
-        if time_diff > 2:
-            raise ValueError(f"Closest entry is more than 2 hours away from current time (difference: {time_diff:.2f} hours)")
-        
-        logger.info(f"Next price entry: {next_price_entry}")
-        logger.info(f"Price: {next_price_entry.price} (threshold: {PRICE_THRESHOLD})")
-        
-        # Compare the price against the threshold
-        if next_price_entry.price < PRICE_THRESHOLD:
-            logger.info(f"Price is below threshold, setting power to LOW: {LOW_POWER_SETTING}")
+        # Check if low power should be used based on hourly average
+        if should_use_low_power(price_data, current_time, PRICE_THRESHOLD):
+            hourly_avg = price_data.get_hourly_average(current_time)
+            logger.info(f"Hourly average price ({hourly_avg:.2f}) is below threshold ({PRICE_THRESHOLD:.2f}), using low power: {LOW_POWER_SETTING}")
             return LOW_POWER_SETTING
         else:
-            logger.info(f"Price is above threshold, setting power to HIGH: {HIGH_POWER_SETTING}")
+            hourly_avg = price_data.get_hourly_average(current_time)
+            logger.info(f"Hourly average price ({hourly_avg:.2f}) is above threshold ({PRICE_THRESHOLD:.2f}), using high power: {HIGH_POWER_SETTING}")
             return HIGH_POWER_SETTING
-    
+
     except ValueError as e:
-        # No future price entries available
+        # No price data available for this hour
         raise ValueError(f"Error determining power setting: {e}") from e
 
 def get_low_power_periods(price_data: PriceData, price_threshold: float) -> List[tuple]:
     """
-    Analyze PriceData to determine all time periods when power will be set to low power.
-    
+    Analyze PriceData to determine all time periods when power will be set to low power
+    based on hourly averages.
+
     Args:
         price_data (PriceData): Object containing price information
         price_threshold (float): The price threshold below which power is set to low
-        
+
     Returns:
         List[tuple]: List of (start_time, end_time) tuples representing low power periods.
                     Each tuple contains datetime objects marking the start and end of a low power period.
-                    
+
     Examples:
         - No low power periods: []
         - Single hour: [(datetime(2025, 1, 1, 14, 0), datetime(2025, 1, 1, 15, 0))]
-        - Multiple ranges: [(datetime(2025, 1, 1, 2, 0), datetime(2025, 1, 1, 5, 0)), 
+        - Multiple ranges: [(datetime(2025, 1, 1, 2, 0), datetime(2025, 1, 1, 5, 0)),
                            (datetime(2025, 1, 1, 14, 0), datetime(2025, 1, 1, 16, 0))]
     """
     if not price_data.entries:
         return []
-    
+
+    # Get all unique hours from the entries
+    hours = set()
+    for entry in price_data.entries:
+        hour_start = entry.time.replace(minute=0, second=0, microsecond=0)
+        hours.add(hour_start)
+
+    # Sort hours
+    sorted_hours = sorted(hours)
+
     low_power_periods = []
     current_range_start = None
-    
-    # Sort entries by time to ensure correct ordering
-    sorted_entries = sorted(price_data.entries, key=lambda entry: entry.time)
-    
-    for i, entry in enumerate(sorted_entries):
-        is_low_power = entry.price < price_threshold
-        
-        if is_low_power and current_range_start is None:
-            # Start of a new low power period
-            current_range_start = entry.time
-        elif not is_low_power and current_range_start is not None:
-            # End of current low power period
-            # The end time is the start of the current entry (since we're ending the previous period)
-            low_power_periods.append((current_range_start, entry.time))
-            current_range_start = None
-        elif is_low_power and current_range_start is not None:
-            # Continue current low power period - check if this is consecutive
-            prev_entry = sorted_entries[i - 1]
-            expected_next_time = prev_entry.time + datetime.timedelta(minutes=15)
-            
-            # If there's a gap in time, end the current period and start a new one
-            if entry.time != expected_next_time:
-                # End the previous period at the expected next time
-                low_power_periods.append((current_range_start, expected_next_time))
-                # Start a new period
-                current_range_start = entry.time
-    
-    # Handle case where the last entry is still in a low power period
+
+    for hour in sorted_hours:
+        try:
+            is_low_power = should_use_low_power(price_data, hour, price_threshold)
+
+            if is_low_power and current_range_start is None:
+                # Start of a new low power period
+                current_range_start = hour
+            elif not is_low_power and current_range_start is not None:
+                # End of current low power period
+                low_power_periods.append((current_range_start, hour))
+                current_range_start = None
+        except ValueError:
+            # No data for this hour, skip it
+            if current_range_start is not None:
+                # End the current period at the previous hour
+                low_power_periods.append((current_range_start, hour))
+                current_range_start = None
+
+    # Handle case where the last hour is still in a low power period
     if current_range_start is not None:
-        # End the period 15 minutes after the last entry (assuming 15-minute intervals)
-        last_entry = sorted_entries[-1]
-        end_time = last_entry.time + datetime.timedelta(minutes=15)
+        # End the period at the last hour + 1 hour
+        end_time = sorted_hours[-1] + datetime.timedelta(hours=1)
         low_power_periods.append((current_range_start, end_time))
-    
+
     return low_power_periods
 
 
@@ -461,10 +467,11 @@ def main():
     
     # Send completion notification
     if power_changed:
+        hourly_avg = price_data.get_hourly_average(current_time)
         if power_setting == LOW_POWER_SETTING:
-            telegram_notifier.send_message(f"✅ Мощността е зададена на НИСКА ({LOW_POWER_SETTING} kW) - цената ({price_data.get_closest_entry(current_time)}) е под прага ({PRICE_THRESHOLD:.2f} EUR/MWh).")
+            telegram_notifier.send_message(f"✅ Мощността е зададена на НИСКА ({LOW_POWER_SETTING} kW) - средна цена за часа ({hourly_avg:.2f} EUR/MWh) е под прага ({PRICE_THRESHOLD:.2f} EUR/MWh).")
         else:
-            telegram_notifier.send_message(f"✅ Мощността е зададена на {HIGH_POWER_SETTING} - цената ({price_data.get_closest_entry(current_time)}) е над прага ({PRICE_THRESHOLD:.2f} EUR/MWh).")
+            telegram_notifier.send_message(f"✅ Мощността е зададена на {HIGH_POWER_SETTING} - средна цена за часа ({hourly_avg:.2f} EUR/MWh) е над прага ({PRICE_THRESHOLD:.2f} EUR/MWh).")
 
     return True
 
