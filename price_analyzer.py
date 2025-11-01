@@ -177,14 +177,14 @@ class PriceData:
                 max_period_price = max(prices)
                 
                 start_hour = period * 2
-                end_hour = start_hour + 1
+                end_hour = start_hour + 2
                 period_str = f"{start_hour:02d}-{end_hour:02d}h"
-                
+
                 timeline.append(f"{period_str}   {avg_price:4.1f}  {min_period_price:4.1f}  {max_period_price:4.1f}")
             else:
                 # No data for this period
                 start_hour = period * 2
-                end_hour = start_hour + 1
+                end_hour = start_hour + 2
                 period_str = f"{start_hour:02d}-{end_hour:02d}h"
                 timeline.append(f"{period_str}    --.-   --.-   --.-")
 
