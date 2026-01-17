@@ -521,7 +521,7 @@ def main():
                 logger.info("Error occurred near a power transition edge - sending notification")
                 should_notify = True
             else:
-                logger.info("Error occurred but not near a power transition edge - suppressing notification")
+                logger.info(f"Error occurred but not near a power transition edge - suppressing notification: {e}")
         else:
             # If we can't get price data at all, it's likely a transient network issue.
             # The power was probably already set correctly at the previous check.
