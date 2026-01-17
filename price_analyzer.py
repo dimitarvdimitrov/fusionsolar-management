@@ -373,6 +373,45 @@ def get_low_power_periods(price_data: PriceData, price_threshold: float) -> List
     return low_power_periods
 
 
+def is_near_power_transition(price_data: PriceData, current_time: datetime.datetime,
+                              price_threshold: float, window_minutes: int = 60) -> bool:
+    """
+    Check if the current time is within a window of a power transition edge.
+
+    A transition edge is when power setting changes from LOW to HIGH or vice versa.
+    This helps determine if a failure notification should be sent - we only want
+    to notify when the power setting might have recently changed.
+
+    Args:
+        price_data: Object containing price information
+        current_time: The current time to check
+        price_threshold: The price threshold for LOW/HIGH power decisions
+        window_minutes: How many minutes after an edge to consider "near" (default 60)
+
+    Returns:
+        True if current_time is within window_minutes after any transition edge
+    """
+    low_power_periods = get_low_power_periods(price_data, price_threshold)
+
+    if not low_power_periods:
+        # No low power periods means we're always HIGH power, no transitions
+        return False
+
+    window = datetime.timedelta(minutes=window_minutes)
+
+    for start_time, end_time in low_power_periods:
+        # Check if we're within the window after the start edge (HIGH → LOW transition)
+        if start_time <= current_time <= start_time + window:
+            logger.debug(f"Near LOW power start edge: {start_time}")
+            return True
+        # Check if we're within the window after the end edge (LOW → HIGH transition)
+        if end_time <= current_time <= end_time + window:
+            logger.debug(f"Near LOW power end edge: {end_time}")
+            return True
+
+    return False
+
+
 def is_daylight_with_times(current_time: datetime.datetime) -> dict:
     """
     Check if the current time is between sunrise and sunset and return times.
@@ -417,12 +456,12 @@ def main():
     """
     power_changed = False
     power_setting = None
-    
+    price_data = None
+    storage = None
+    current_time = datetime.datetime.now(TIMEZONE)
+
     try:
         logger.info("Starting electricity price analysis")
-        
-        # Get current time
-        current_time = datetime.datetime.now(TIMEZONE)
         logger.info(f"Current time: {current_time}")
 
         # Check if it's daylight (between sunrise and sunset)
@@ -446,23 +485,51 @@ def main():
         # Decide power setting
         logger.info("Deciding power setting based on price")
         power_setting = decide_power_setting(price_data, current_time)
-        
+
         # Apply the power setting
         logger.info(f"Setting power to {power_setting} kW")
         from set_power import SetPower
         power_setter = SetPower(FUSIONSOLAR_USERNAME, FUSIONSOLAR_PASSWORD, storage)
         result = power_setter.set_power_limit(power_setting)
-        
+
         if result:
             logger.info("Power setting successfully applied")
             power_changed = True
         else:
             logger.info("Power setting is already applied")
-            
+
     except Exception as e:
         logger.error(f"An error occurred: {e}")
-        # Send error notification
-        telegram_notifier.send_message(f"❌ Грешка при анализ на цените: {str(e)}")
+
+        # Only send error notification if we're near a power transition edge.
+        # This avoids spamming notifications for transient failures when the
+        # power setting wouldn't have changed anyway.
+        should_notify = False
+
+        # Try to get price data if we don't have it yet
+        if price_data is None:
+            try:
+                if storage is None:
+                    storage = create_storage()
+                price_data = fetch_price_data(current_time, storage)
+            except Exception as fetch_error:
+                logger.warning(f"Could not fetch price data in error handler: {fetch_error}")
+
+        if price_data is not None:
+            near_edge = is_near_power_transition(price_data, current_time, PRICE_THRESHOLD)
+            if near_edge:
+                logger.info("Error occurred near a power transition edge - sending notification")
+                should_notify = True
+            else:
+                logger.info(f"Error occurred but not near a power transition edge - suppressing notification: {e}")
+        else:
+            # If we can't get price data at all, it's likely a transient network issue.
+            # The power was probably already set correctly at the previous check.
+            logger.info("Cannot determine transition edges - suppressing notification")
+
+        if should_notify:
+            telegram_notifier.send_message(f"❌ Грешка при анализ на цените: {str(e)}")
+
         return False
     
     # Send completion notification
