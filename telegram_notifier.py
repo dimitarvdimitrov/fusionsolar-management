@@ -34,10 +34,10 @@ class TelegramNotifier:
     async def send_async_message(self, message: str) -> bool:
         """
         Send a message to the configured Telegram chat asynchronously.
-        
+
         Args:
             message (str): The message to send
-            
+
         Returns:
             bool: True if the message was sent successfully, False otherwise
         """
@@ -48,6 +48,30 @@ class TelegramNotifier:
             return True
         except Exception as e:
             logger.error(f"Failed to send Telegram message: {e}")
+            return False
+
+    async def send_async_photo(self, photo: bytes, caption: Optional[str] = None) -> bool:
+        """
+        Send a photo to the configured Telegram chat asynchronously.
+
+        Args:
+            photo: The image data to send (PNG/JPEG).
+            caption: Caption text for the photo (max 1024 chars).
+
+        Returns:
+            True if the photo was sent successfully, False otherwise.
+        """
+        try:
+            bot = telegram.Bot(token=self.bot_token)
+            await bot.send_photo(
+                chat_id=self.chat_id,
+                photo=photo,
+                caption=caption
+            )
+            logger.info("Telegram photo sent")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send Telegram photo: {e}")
             return False
 
     def send_message(self, message: str) -> bool:
@@ -64,11 +88,32 @@ class TelegramNotifier:
             # Create a new event loop
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            
+
             # Run the async function in the loop
             result = loop.run_until_complete(self.send_async_message(message))
             loop.close()
             return result
         except Exception as e:
             logger.error(f"Error in Telegram notification: {e}")
-            return False 
+            return False
+
+    def send_photo(self, photo: bytes, caption: Optional[str] = None) -> bool:
+        """
+        Synchronous wrapper for sending Telegram photos.
+
+        Args:
+            photo: The image data to send (PNG/JPEG).
+            caption: Caption text for the photo (max 1024 chars).
+
+        Returns:
+            True if the photo was sent successfully, False otherwise.
+        """
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(self.send_async_photo(photo, caption))
+            loop.close()
+            return result
+        except Exception as e:
+            logger.error(f"Error in Telegram photo notification: {e}")
+            return False

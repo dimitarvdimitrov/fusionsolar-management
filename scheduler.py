@@ -74,16 +74,20 @@ class Scheduler:
         
         return f"📊 Успешно изтеглени цени за {next_day.strftime('%Y-%m-%d')}:\n{price_data}{low_power_info}"
     
-    def run_price_analyzer(self) -> bool:
+    def run_price_analyzer(self, force_notify: bool = False) -> bool:
         """
         Run the price analyzer and return the result.
-        
+
+        Args:
+            force_notify: If True, always send failure notifications regardless of
+                         power transition timing. Used for manual Lambda invocations.
+
         Returns:
             bool: True if the price analyzer ran successfully, False otherwise
         """
         try:
             logger.info("Running price analyzer...")
-            result = price_analyzer.main()
+            result = price_analyzer.main(force_notify=force_notify)
             if result:
                 logger.info("Price analyzer completed successfully")
             else:

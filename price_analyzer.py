@@ -450,9 +450,13 @@ def is_daylight_with_times(current_time: datetime.datetime) -> dict:
     }
 
 
-def main():
+def main(force_notify: bool = False):
     """
     Main function to orchestrate the price analysis and power setting.
+
+    Args:
+        force_notify: If True, always send failure notifications regardless of
+                     power transition timing. Used for manual Lambda invocations.
     """
     power_changed = False
     power_setting = None
@@ -488,7 +492,7 @@ def main():
 
         # Apply the power setting
         logger.info(f"Setting power to {power_setting} kW")
-        from set_power import SetPower
+        from set_power import SetPower, SetPowerError
         power_setter = SetPower(FUSIONSOLAR_USERNAME, FUSIONSOLAR_PASSWORD, storage)
         result = power_setter.set_power_limit(power_setting)
 
@@ -504,31 +508,59 @@ def main():
         # Only send error notification if we're near a power transition edge.
         # This avoids spamming notifications for transient failures when the
         # power setting wouldn't have changed anyway.
+        # Exception: Manual triggers (force_notify=True) always notify.
         should_notify = False
+        screenshot_data = None
+        stage_name = None
 
-        # Try to get price data if we don't have it yet
-        if price_data is None:
-            try:
-                if storage is None:
-                    storage = create_storage()
-                price_data = fetch_price_data(current_time, storage)
-            except Exception as fetch_error:
-                logger.warning(f"Could not fetch price data in error handler: {fetch_error}")
+        # Extract screenshot and stage if this is a SetPowerError
+        if isinstance(e, SetPowerError):
+            screenshot_data = e.screenshot
+            stage_name = e.stage
 
-        if price_data is not None:
-            near_edge = is_near_power_transition(price_data, current_time, PRICE_THRESHOLD)
-            if near_edge:
-                logger.info("Error occurred near a power transition edge - sending notification")
-                should_notify = True
-            else:
-                logger.info(f"Error occurred but not near a power transition edge - suppressing notification: {e}")
+        # Manual triggers always notify, regardless of transition timing.
+        if force_notify:
+            logger.info("Manual trigger detected (force_notify=True) - will send notification on error")
+            should_notify = True
         else:
-            # If we can't get price data at all, it's likely a transient network issue.
-            # The power was probably already set correctly at the previous check.
-            logger.info("Cannot determine transition edges - suppressing notification")
+            # Scheduled runs use edge-based suppression.
+            # Try to get price data if we don't have it yet.
+            if price_data is None:
+                try:
+                    if storage is None:
+                        storage = create_storage()
+                    price_data = fetch_price_data(current_time, storage)
+                except Exception as fetch_error:
+                    logger.warning(f"Could not fetch price data in error handler: {fetch_error}")
+
+            if price_data is not None:
+                near_edge = is_near_power_transition(price_data, current_time, PRICE_THRESHOLD)
+                if near_edge:
+                    logger.info("Error occurred near a power transition edge - sending notification")
+                    should_notify = True
+                else:
+                    logger.info(f"Error occurred but not near a power transition edge - suppressing notification: {e}")
+            else:
+                # If we can't get price data at all, it's likely a transient network issue.
+                # The power was probably already set correctly at the previous check.
+                logger.info("Cannot determine transition edges - suppressing notification")
 
         if should_notify:
-            telegram_notifier.send_message(f"❌ Грешка при анализ на цените: {str(e)}")
+            # Build error message, including stage name if available
+            # Strip playwright call logs (everything after "Call log:") and truncate
+            error_str = str(e).split("Call log:")[0].strip()
+            if len(error_str) > 300:
+                error_str = error_str[:300] + "..."
+            base_message = f"❌ Грешка при анализ на цените: {error_str}"
+            if stage_name:
+                error_message = f"{base_message}\n\nFailed at stage: {stage_name}"
+            else:
+                error_message = base_message
+
+            if screenshot_data:
+                telegram_notifier.send_photo(screenshot_data, caption=error_message)
+            else:
+                telegram_notifier.send_message(error_message)
 
         return False
     

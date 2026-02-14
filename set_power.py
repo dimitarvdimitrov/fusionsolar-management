@@ -1,3 +1,5 @@
+from typing import Optional
+
 from playwright.sync_api import sync_playwright
 import time
 import logging
@@ -33,18 +35,19 @@ class Screenshotter:
         self.page = page
         self.session_path = f"screenshots/session_{datetime.datetime.now(TIMEZONE).strftime('%Y-%m-%d_%H-%M')}"
         self.storage = storage
+        self.stage_name = None  # Track the last successful screenshot action
+        self.last_screenshot = None  # Track the last successful screenshot bytes
         logger.info("Screenshotter initialized")
 
-    def take_screenshot(self, action_name):
+    def take_screenshot(self, action_name) -> Optional[bytes]:
         """
         Take a screenshot of the current page state and save it using the storage interface.
-        If no storage is provided, it will save to the local filesystem.
 
         Args:
             action_name (str): Name of the action being performed
 
         Returns:
-            str: Path to the saved screenshot
+            Optional[bytes]: The screenshot image data, or None if capture failed
         """
         try:
             time.sleep(1)  # Delay to ensure the page is fully loaded
@@ -76,8 +79,24 @@ class Screenshotter:
                 logger.info(f"Screenshot saved to storage: {filepath}")
             else:
                 logger.error(f"Failed to save screenshot to storage: {filepath}")
+
+            # Track the last screenshot captured (not necessarily uploaded successfully).
+            self.stage_name = action_name
+            self.last_screenshot = screenshot_data
+            return screenshot_data
         except Exception as e:
             logger.error(f"Failed to take screenshot for '{action_name}': {e}")
+            return None
+
+
+class SetPowerError(Exception):
+    """Exception raised when setting power limit fails, optionally carrying a screenshot and stage name."""
+
+    def __init__(self, message: str, screenshot: Optional[bytes] = None, stage: Optional[str] = None):
+        super().__init__(message)
+        self.screenshot = screenshot
+        self.stage = stage  # The last successful action_name before failure
+
 
 class SetPower:
     """
@@ -286,12 +305,19 @@ class SetPower:
                 
             except Exception as e:
                 logger.error(f"An error occurred: {e}")
-                # Take screenshot of the error state if possible
+                # Capture the stage name before taking the error screenshot.
+                # (error screenshot would overwrite stage_name, but we want the last successful stage)
+                stage_name = screenshotter.stage_name
+                last_good_screenshot = screenshotter.last_screenshot
+                # Try to capture error state screenshot, fall back to last successful screenshot
+                error_screenshot = None
                 try:
-                    screenshotter.take_screenshot("error_state")
-                except:
-                    pass
-                raise e
+                    error_screenshot = screenshotter.take_screenshot("error_state")
+                except Exception as capture_err:
+                    logger.warning(f"Failed to capture error state screenshot: {capture_err}")
+                # Use error screenshot if available, otherwise fall back to last successful screenshot
+                screenshot_to_send = error_screenshot if error_screenshot else last_good_screenshot
+                raise SetPowerError(str(e), screenshot=screenshot_to_send, stage=stage_name) from e
             finally:
 
                 # Save final state screenshot
