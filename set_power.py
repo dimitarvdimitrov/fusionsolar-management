@@ -171,9 +171,16 @@ class SetPower:
                 screenshotter.take_screenshot("login_completed")
                 logger.info("Navigation completed")
                 
+                # Navigate to Monitoring first (Device Management is under a plant view)
+                logger.info("Clicking on Monitoring tab")
+                page.click('a:has-text("Monitoring")')
+                page.wait_for_load_state('networkidle')
+                screenshotter.take_screenshot("monitoring_clicked")
+                logger.info("Monitoring tab clicked")
+
                 # Navigate to Device Management
                 logger.info("Clicking on Device Management tab")
-                page.click('span.monitor-tab a:has-text("Device Management")')
+                page.click('a:has-text("Device Management")')
                 screenshotter.take_screenshot("device_management_clicked")
                 logger.info("Device Management tab clicked")
                 
@@ -190,8 +197,11 @@ class SetPower:
                 logger.info("Set Parameters button clicked")
                 
                 # Navigate to Active Power Control tab
+                # Wait for the tab to be visible (modal may still be loading)
+                logger.info("Waiting for Active Power Control tab to be visible")
+                page.wait_for_selector('text=Active Power Control', timeout=60000)
                 logger.info("Clicking Active Power Control tab")
-                page.click('div#rc-tabs-0-tab-Active\\ Power\\ Control')
+                page.click('text=Active Power Control')
                 screenshotter.take_screenshot("active_power_control_tab")
                 logger.info("Active Power Control tab clicked")
 
