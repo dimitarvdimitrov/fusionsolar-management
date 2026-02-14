@@ -5,7 +5,7 @@ frameworkVersion: '3'
 provider:
   name: aws
   region: ${opt:region, 'eu-central-1'}
-  memorySize: 512
+  memorySize: 2048
   timeout: 900 # 15 minutes - max possible, browser operations can take 1-2 minutes
   ecr:
     images:
