@@ -171,16 +171,12 @@ class SetPower:
                 screenshotter.take_screenshot("login_completed")
                 logger.info("Navigation completed")
                 
-                # Navigate to Monitoring first (Device Management is under a plant view)
-                logger.info("Clicking on Monitoring tab")
-                page.click('a:has-text("Monitoring")')
-                page.wait_for_load_state('networkidle')
-                screenshotter.take_screenshot("monitoring_clicked")
-                logger.info("Monitoring tab clicked")
-
+                # After login, we land on the plant Overview page under Monitoring
+                # Device Management is in the secondary nav - click it directly
+                # Use a more specific selector to avoid matching hidden dropdown items
                 # Navigate to Device Management
                 logger.info("Clicking on Device Management tab")
-                page.click('a:has-text("Device Management")')
+                page.locator('a:has-text("Device Management"):visible').click()
                 screenshotter.take_screenshot("device_management_clicked")
                 logger.info("Device Management tab clicked")
                 
