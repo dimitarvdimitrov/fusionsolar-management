@@ -165,33 +165,43 @@ class PriceRepository:
     def _fetch_online_data(self) -> str:
         """
         Fetch the JSON data containing electricity price information.
-        
+
         Returns:
             str: JSON content of the price data
-            
+
         Raises:
             Exception: If the data cannot be fetched
         """
         try:
             # URL for the electricity price data JSON API
-            url = "https://ibex.bg/Ext/IDM_Homepage/fetch_dam.php?lang=en&num=40"
-            
+            api_url = "https://ibex.bg/Ext/IDM_Homepage/fetch_dam.php?lang=en&num=40"
+            main_url = "https://ibex.bg/"
+
             # Set up headers to mimic a browser request
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             }
-            
-            # Send the GET request
-            logger.info(f"Fetching price data from {url}")
-            response = requests.get(url, headers=headers, timeout=30)
+
+            # Use a session to persist cookies across requests.
+            # IBEX requires visiting the main page first to get a cookie before the API returns JSON.
+            session = requests.Session()
+            session.headers.update(headers)
+
+            # First, visit the main page to get the required cookie
+            logger.info(f"Visiting {main_url} to obtain session cookie")
+            session.get(main_url, timeout=30)
+
+            # Now fetch the API with the cookie
+            logger.info(f"Fetching price data from {api_url}")
+            response = session.get(api_url, timeout=30)
             response.raise_for_status()  # Raise an exception for HTTP errors
-            
+
             # Get the content as text
             json_content = response.text
             logger.info(f"Successfully fetched price data, content length: {len(json_content)} chars")
-            
+
             return json_content
-            
+
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to fetch price data: {e}")
             raise Exception(f"Error fetching price data: {e}") from e
