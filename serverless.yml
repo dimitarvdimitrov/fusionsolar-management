@@ -58,7 +58,7 @@ functions:
     description: Fetches electricity prices for the next day
     events:
       - schedule:
-          rate: cron(30 * * * ? *)  # Run every hour at 30 minutes past
+          rate: cron(48 * * * ? *)  # Run every hour at 48 minutes past
           enabled: true
 
   priceAnalyzer:
