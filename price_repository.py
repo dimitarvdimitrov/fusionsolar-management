@@ -166,44 +166,46 @@ class PriceRepository:
         """
         Fetch the JSON data containing electricity price information.
 
+        Uses Playwright browser automation to bypass JavaScript-based bot protection.
+
         Returns:
             str: JSON content of the price data
 
         Raises:
             Exception: If the data cannot be fetched
         """
+        from playwright.sync_api import sync_playwright
+
+        api_url = "https://ibex.bg/Ext/IDM_Homepage/fetch_dam.php?lang=en&num=40"
+
         try:
-            # URL for the electricity price data JSON API
-            api_url = "https://ibex.bg/Ext/IDM_Homepage/fetch_dam.php?lang=en&num=40"
-            main_url = "https://ibex.bg/"
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch(
+                    headless=True,
+                    args=["--disable-gpu", "--single-process"]
+                )
+                context = browser.new_context()
+                page = context.new_page()
 
-            # Set up headers to mimic a browser request
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            }
+                # Navigate to the API URL - Playwright handles JS challenges automatically
+                logger.info(f"Fetching price data from {api_url} using Playwright")
+                page.goto(api_url, wait_until="networkidle", timeout=60000)
 
-            # Use a session to persist cookies across requests.
-            # IBEX requires visiting the main page first to get a cookie before the API returns JSON.
-            session = requests.Session()
-            session.headers.update(headers)
+                # Wait for JSON content to appear (starts with '[')
+                page.wait_for_function(
+                    "document.body.innerText.trim().startsWith('[')",
+                    timeout=30000
+                )
 
-            # First, visit the main page to get the required cookie
-            logger.info(f"Visiting {main_url} to obtain session cookie")
-            session.get(main_url, timeout=30)
+                # Get the page content (should be JSON)
+                json_content = page.inner_text("body")
+                logger.info(f"Successfully fetched price data, content length: {len(json_content)} chars")
 
-            # Now fetch the API with the cookie
-            logger.info(f"Fetching price data from {api_url}")
-            response = session.get(api_url, timeout=30)
-            response.raise_for_status()  # Raise an exception for HTTP errors
+                browser.close()
+                return json_content
 
-            # Get the content as text
-            json_content = response.text
-            logger.info(f"Successfully fetched price data, content length: {len(json_content)} chars")
-
-            return json_content
-
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to fetch price data: {e}")
+        except Exception as e:
+            logger.error(f"Failed to fetch price data with Playwright: {e}")
             raise Exception(f"Error fetching price data: {e}") from e
     
     def _parse_price_table(self, json_content: str) -> PriceData:
