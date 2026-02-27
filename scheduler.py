@@ -145,10 +145,12 @@ class Scheduler:
                 # No change from stored data.
                 logger.info(f"Price data for {next_day_str} unchanged")
 
-            # Always persist the newly scraped data (overwrites old data).
-            self.repository.persist_prices(scraped_data)
-
-            logger.info(f"Successfully processed {len(scraped_data.entries)} price entries for {next_day_str}")
+            # Persist the newly scraped data (overwrites old data).
+            if scraped_data is not None:
+                self.repository.persist_prices(scraped_data)
+                logger.info(f"Successfully processed {len(scraped_data.entries)} price entries for {next_day_str}")
+            else:
+                logger.warning(f"No data to persist for {next_day_str}")
             return True
 
         except Exception as e:
