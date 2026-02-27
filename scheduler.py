@@ -43,8 +43,6 @@ class Scheduler:
         """Initialize the scheduler."""
         logger.info("Initializing Scheduler...")
         self.repository = PriceRepository(create_storage())
-        self.next_day_prices_fetched = self.repository.prices_for_day_exist(datetime.datetime.now() + datetime.timedelta(days=1))
-        # Create a TelegramNotifier instance
         self.telegram_notifier = TelegramNotifier()
     
     @staticmethod
@@ -100,62 +98,115 @@ class Scheduler:
     def fetch_next_day_prices(self) -> bool:
         """
         Fetch prices for the next day using PriceRepository.
-        
+
+        Always scrapes fresh data from IBEX. If the new prices differ from stored
+        prices (e.g., IBEX initially returned zeros that are now filled in),
+        sends a Telegram notification with the updated price table.
+
         Returns:
             bool: True if prices were fetched successfully, False otherwise
         """
-        try:
-            logger.info("Fetching prices for next day...")
-            
-            # Get the current time in the configured timezone
-            current_time = datetime.datetime.now()
-            
-            # Calculate the next day's date
-            next_day = current_time + datetime.timedelta(days=1)
+        next_day = datetime.datetime.now() + datetime.timedelta(days=1)
+        next_day_str = next_day.strftime('%Y-%m-%d')
 
-            # Try to fetch prices for the next day
-            logger.info(f"Attempting to fetch prices for {next_day.strftime('%Y-%m-%d')}")
-            price_data = self.repository.get_prices_for_date(next_day)
-            
-            if price_data and price_data.entries:
-                if not self.next_day_prices_fetched:
-                    message = self._format_next_day_prices_message(price_data, next_day)
-                    self.telegram_notifier.send_message(message)
-                    self.next_day_prices_fetched = True
-                    
-                logger.info(f"Successfully fetched {len(price_data.entries)} price entries for {next_day.strftime('%Y-%m-%d')}")
-                return True
-            else:
-                self.next_day_prices_fetched = False
-                logger.warning(f"No price entries found for {next_day.strftime('%Y-%m-%d')}")
-                
-                # Send Telegram notification if no price data found after 6 PM
-                current_hour = datetime.datetime.now().hour
-                if current_hour >= 18:  # 6 PM or later
-                    error_message = f"⚠️ Няма намерени цени за {next_day.strftime('%Y-%m-%d')}. Моля проверете дали данните са налични."
-                    try:
-                        self.telegram_notifier.send_message(error_message)
-                        logger.info("Sent Telegram notification for missing price data")
-                    except Exception as telegram_error:
-                        logger.error(f"Failed to send Telegram notification for missing price data: {telegram_error}")
-                
+        try:
+            logger.info(f"Scraping prices for {next_day_str}...")
+
+            # Always scrape fresh data from IBEX.
+            scraped_data = self.repository.scrape_prices()
+
+            if not scraped_data.entries:
+                logger.warning(f"No price entries scraped for {next_day_str}")
+                self._notify_missing_prices(next_day)
                 return False
-                
+
+            # Check if the scraped data is for the expected date.
+            scraped_date = scraped_data.get_date().date()
+            if scraped_date != next_day.date():
+                logger.info(f"Scraped data is for {scraped_date}, not {next_day.date()} - IBEX hasn't published yet")
+                self._notify_missing_prices(next_day)
+                return False
+
+            # Load existing stored data (if any) to compare.
+            stored_data = self.repository.get_prices_for_date(next_day)
+
+            # Determine what kind of notification to send.
+            if stored_data is None:
+                # First time fetching prices for this day.
+                logger.info(f"First fetch of prices for {next_day_str}")
+                message = self._format_next_day_prices_message(scraped_data, next_day)
+                self.telegram_notifier.send_message(message)
+            elif scraped_data != stored_data:
+                # Prices have changed (e.g., zeros filled in with real values).
+                logger.info(f"Price data for {next_day_str} has changed, sending update notification")
+                message = self._format_price_update_message(scraped_data, next_day)
+                self.telegram_notifier.send_message(message)
+            else:
+                # No change from stored data.
+                logger.info(f"Price data for {next_day_str} unchanged")
+
+            # Always persist the newly scraped data (overwrites old data).
+            self.repository.persist_prices(scraped_data)
+
+            logger.info(f"Successfully processed {len(scraped_data.entries)} price entries for {next_day_str}")
+            return True
+
         except Exception as e:
-            self.next_day_prices_fetched = False
             logger.error(f"Error fetching next day prices: {e}")
-            
-            # Send Telegram notification if fetching fails after 6 PM
-            current_hour = datetime.datetime.now().hour
-            if current_hour >= 18:  # 6 PM or later
-                error_message = f"❌ Грешка при изтегляне на цените за {next_day.strftime('%Y-%m-%d')}: {str(e)}"
-                try:
-                    self.telegram_notifier.send_message(error_message)
-                    logger.info("Sent Telegram error notification for failed price fetching")
-                except Exception as telegram_error:
-                    logger.error(f"Failed to send Telegram error notification: {telegram_error}")
-            
+            self._notify_fetch_error(next_day, e)
             return False
+
+    def _notify_missing_prices(self, next_day: datetime.datetime) -> None:
+        """Send notification when prices are not available, but only after 6 PM."""
+        current_hour = datetime.datetime.now().hour
+        if current_hour >= 18:
+            error_message = f"⚠️ Няма намерени цени за {next_day.strftime('%Y-%m-%d')}. Моля проверете дали данните са налични."
+            try:
+                self.telegram_notifier.send_message(error_message)
+                logger.info("Sent Telegram notification for missing price data")
+            except Exception as telegram_error:
+                logger.error(f"Failed to send Telegram notification for missing price data: {telegram_error}")
+
+    def _notify_fetch_error(self, next_day: datetime.datetime, error: Exception) -> None:
+        """Send notification when fetching fails, but only after 6 PM."""
+        current_hour = datetime.datetime.now().hour
+        if current_hour >= 18:
+            error_message = f"❌ Грешка при изтегляне на цените за {next_day.strftime('%Y-%m-%d')}: {str(error)}"
+            try:
+                self.telegram_notifier.send_message(error_message)
+                logger.info("Sent Telegram error notification for failed price fetching")
+            except Exception as telegram_error:
+                logger.error(f"Failed to send Telegram error notification: {telegram_error}")
+
+    @staticmethod
+    def _format_price_update_message(price_data, next_day: datetime.datetime) -> str:
+        """
+        Format the Telegram notification message for updated prices.
+
+        This is sent when previously stored prices differ from newly scraped prices
+        (e.g., IBEX initially returned zeros that are now filled with real values).
+
+        Args:
+            price_data: PriceData object containing the new price information
+            next_day: datetime object representing the next day
+
+        Returns:
+            str: Formatted message string for Telegram notification
+        """
+        # Calculate low power periods for the notification.
+        low_power_periods = price_analyzer.get_low_power_periods(price_data, PRICE_THRESHOLD)
+
+        # Format the low power periods for display.
+        if low_power_periods:
+            periods_text = "\n".join([
+                f"  • {start.strftime('%H:%M')} - {end.strftime('%H:%M')}"
+                for start, end in low_power_periods
+            ])
+            low_power_info = f"\n\n🔋 Периоди с ниска мощност:\n{periods_text}"
+        else:
+            low_power_info = "\n\n🔋 Няма периоди с ниска мощност за утре."
+
+        return f"🔄 Обновени цени за {next_day.strftime('%Y-%m-%d')}:\n{price_data}{low_power_info}"
 
     def schedule_jobs(self) -> None:
         """

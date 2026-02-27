@@ -53,41 +53,65 @@ class PriceRepository:
         # Storage implementation
         self.storage = storage
 
-    def get_prices_for_date(self, target_date: datetime.datetime) -> PriceData:
+    def get_prices_for_date(self, target_date: datetime.datetime) -> Optional[PriceData]:
         """
-        Get price data for the day containing the specified datetime.
-        
-        The function first checks if we have the data locally, and if not,
-        fetches it from the online source and saves it locally.
-        
+        Get stored price data for the day containing the specified datetime.
+
+        This method only reads from storage; it does not fetch from online sources.
+        Use scrape_prices() to fetch fresh data from IBEX.
+
         Args:
             target_date (datetime.datetime): The datetime for which to get price data
-            
-        Returns:
-            PriceData: Price data for the day containing the target date
-            
-        Raises:
-            Exception: If price data cannot be retrieved after attempting to fetch and store
-        """
-        logger.info(f"Getting prices for date: {target_date}")
-        
-        # 1. First, check if we have local data for the target date
-        local_data = self._get_stored_data(target_date)
-        if local_data:
-            logger.info(f"Found stored price data for {target_date}")
-            return local_data
-        
-        # 2. If local data doesn't exist, fetch from online source and save locally
-        logger.info(f"No stored data found for {target_date}, fetching from online source")
-        self._fetch_and_store_data()
 
-        # 3. Try to get local data again after fetching
-        local_data = self._get_stored_data(target_date)
-        if local_data:
-            return local_data
+        Returns:
+            Optional[PriceData]: Price data for the day if found, None otherwise
+        """
+        logger.info(f"Getting stored prices for date: {target_date}")
+        return self._get_stored_data(target_date)
+
+    def scrape_prices(self) -> PriceData:
+        """
+        Fetch prices from the IBEX API without any storage interaction.
+
+        This method always fetches fresh data from the online source. It does not
+        check or update storage. Use persist_prices() to store the result.
+
+        Returns:
+            PriceData: The freshly fetched price data
+
+        Raises:
+            Exception: If data cannot be fetched or parsed
+        """
+        logger.info("Scraping prices from IBEX API")
+        json_content = self._fetch_online_data()
+        price_data = self._parse_price_table(json_content)
+        logger.info(f"Successfully scraped price data for {price_data.get_date().strftime('%Y-%m-%d')}")
+        return price_data
+
+    def persist_prices(self, price_data: PriceData) -> None:
+        """
+        Store price data to storage.
+
+        This method stores the given price data, overwriting any existing data
+        for the same date.
+
+        Args:
+            price_data (PriceData): The price data to store
+
+        Raises:
+            Exception: If data cannot be stored
+        """
+        data_date = price_data.get_date()
+        logger.info(f"Persisting price data for {data_date.strftime('%Y-%m-%d')}")
+
+        # Serialize the price data to JSON for storage.
+        parsed_json_data = price_data.to_json(indent=2)
+        parsed_filename = self._generate_parsed_filename(data_date)
+
+        if self.storage.write_text(parsed_filename, parsed_json_data):
+            logger.info(f"Successfully stored price data to {parsed_filename}")
         else:
-            # 4. If still no local data, raise exception
-            raise Exception(f"Failed to retrieve stored data after fetching for {target_date}")
+            raise Exception(f"Failed to write price data to {parsed_filename}")
     
     def _get_stored_data(self, date: datetime.datetime) -> Optional[PriceData]:
         """
@@ -125,42 +149,6 @@ class PriceRepository:
         except Exception as e:
             logger.error(f"Error loading stored price data from {filename}: {e}")
             return None
-    
-    def _fetch_and_store_data(self):
-        """
-        Fetch price data from online source and store it locally.
-        
-        Returns:
-            Tuple[PriceData, datetime.datetime]: The fetched price data and the fetch time
-            
-        Raises:
-            Exception: If data can't be fetched or parsed
-        """
-        try:
-            # 1. Fetch data from online source
-            json_content = self._fetch_online_data()
-            
-            # 2. Parse the data into a PriceData object
-            price_data = self._parse_price_table(json_content)
-
-            # Get current time in the configured timezone
-            data_date = price_data.get_date()
-            logger.info(f"Successfully fetched price data from online source; date {data_date.strftime('%Y-%m-%d')}")
-
-            # Check if we already have this data stored
-            existing_data = self._get_stored_data(data_date)
-            if existing_data:
-                logger.info(f"Price data for {data_date.strftime('%Y-%m-%d')} already exists in storage")
-                if existing_data.entries != price_data.entries:
-                    raise Exception(f"Price data for {data_date.strftime('%Y-%m-%d')} already exists but is different: existing {existing_data} != fetched {price_data}")
-                return
-            
-            # 3. Store the data if it doesn't exist
-            self._store_data(data_date, price_data, json_content)
-            
-        except Exception as e:
-            logger.error(f"Error in fetch_and_store_data: {e}")
-            raise Exception(f"Failed to fetch and store price data: {e}") from e
     
     def _fetch_online_data(self) -> str:
         """
@@ -264,41 +252,6 @@ class PriceRepository:
         except Exception as e:
             raise Exception(f"Error parsing price JSON: {e}") from e
     
-    def _store_data(self, date: datetime.datetime, price_data: PriceData, json_content: str):
-        """
-        Store price data using the configured storage implementation.
-        
-        Args:
-            date (datetime.datetime): The date for which the data is relevant
-            price_data (PriceData): The price data to store
-            json_content (str): The raw JSON content to store, if provided
-            
-        Returns:
-            None
-            
-        Raises:
-            Exception: If the data cannot be stored
-        """
-        try:
-            # Write the data to storage
-            parsed_filename = self._generate_parsed_filename(date)
-            parsed_json_data = price_data.to_json(indent=2)
-            if self.storage.write_text(parsed_filename, parsed_json_data):
-                logger.info(f"Successfully stored price data to {parsed_filename}")
-            else:
-                raise Exception(f"Failed to write price data to {parsed_filename}")
-
-            # Store raw JSON content
-            raw_filename = self._generate_raw_filename(date)
-            if self.storage.write_text(raw_filename, json_content):
-                logger.info(f"Successfully stored raw JSON content to {raw_filename}")
-            else:
-                logger.warning(f"Failed to write raw JSON content to {raw_filename}")
-            
-        except Exception as e:
-            logger.error(f"Error storing price data: {e}")
-            raise Exception(f"Failed to store price data: {e}") from e
-    
     @staticmethod
     def _generate_parsed_filename(date: datetime.datetime) -> str:
         """
@@ -311,28 +264,3 @@ class PriceRepository:
             str: The generated filename
         """
         return f"prices/parsed/ibex.bg-{date.strftime('%Y-%m-%d')}.json"
-    
-    @staticmethod
-    def _generate_raw_filename(date: datetime.datetime) -> str:
-        """
-        Generate a filename for raw data storage based on the date.
-        
-        Args:
-            date (datetime.datetime): The date for which to generate a filename
-            
-        Returns:
-            str: The generated filename
-        """
-        return f"prices/raw/ibex.bg-{date.strftime('%Y-%m-%d')}.raw.json"
-
-    def prices_for_day_exist(self, date: datetime.datetime) -> bool:
-        """
-        Check if price data for the specified date exists in storage.
-
-        Args:
-            date (datetime.datetime): The date to check
-
-        Returns:
-            bool: True if data exists, False otherwise
-        """
-        return self._get_stored_data(date) is not None

@@ -61,6 +61,26 @@ class PriceData:
         """Sort entries by time after initialization"""
         self.entries.sort(key=lambda entry: entry.time)
 
+    def __eq__(self, other: object) -> bool:
+        """
+        Compare two PriceData objects for equality.
+
+        Two PriceData objects are equal if they have the same entries (same times and prices).
+        fetch_time is intentionally excluded because two fetches of the same price data
+        at different times should still be considered equal.
+        """
+        if not isinstance(other, PriceData):
+            return NotImplemented
+        if len(self.entries) != len(other.entries):
+            return False
+        for self_entry, other_entry in zip(self.entries, other.entries):
+            # Compare time (normalized to same timezone) and price.
+            if self_entry.time != other_entry.time:
+                return False
+            if self_entry.price != other_entry.price:
+                return False
+        return True
+
     def get_date(self) -> datetime.datetime:
         """
         Get the date of the price entries.
@@ -260,26 +280,32 @@ def should_use_low_power(price_data: PriceData, target_time: datetime.datetime, 
 def fetch_price_data(current_time: datetime.datetime, storage: StorageInterface) -> PriceData:
     """
     Fetch price data using the PriceRepository.
-    
-    This function uses PriceRepository to get the price data for the current time,
-    either from local storage or by fetching from the online source.
-    
+
+    This function uses PriceRepository to get the stored price data for the current time.
+    If no stored data exists, it scrapes fresh data from IBEX.
+
     Returns:
         PriceData: Object containing structured price information
-    
+
     Raises:
         Exception: If price data cannot be fetched
     """
     try:
         # Import PriceRepository here to avoid circular import
         from price_repository import PriceRepository
-        
+
         # Create a price repository instance
         repository = PriceRepository(storage)
-        
-        # Get price data for the current time
+
+        # Get stored price data for the current time
         price_data = repository.get_prices_for_date(current_time)
-        
+
+        if price_data is None:
+            # No stored data, scrape fresh data and persist it.
+            logger.info(f"No stored price data for {current_time.date()}, scraping from IBEX")
+            price_data = repository.scrape_prices()
+            repository.persist_prices(price_data)
+
         logger.info(f"Successfully retrieved price data: {len(price_data.entries)} entries")
         return price_data
     except Exception as e:
