@@ -17,9 +17,7 @@ pytest tests/test_daylight.py::TestClass::test_method  # single test
 
 # Deploy to AWS
 npm install                                  # install serverless deps
-serverless deploy                            # full deploy (builds Docker image)
-serverless deploy function -f priceFetcher  # deploy single function
-serverless deploy function -f priceAnalyzer
+serverless deploy                            # full deploy (always use this, never deploy single functions)
 
 # Test deployed functions
 serverless invoke -f priceFetcher
@@ -66,6 +64,8 @@ Uses container-based Lambda deployment (not zip packages) because Playwright req
 - `Dockerfile.lambda` builds Ubuntu 22.04 image with Python, Playwright, and Chromium
 - `serverless.yml` configures ECR image build and Lambda functions
 - `serverless deploy` builds the Docker image, pushes to ECR, and updates Lambda
+
+**IMPORTANT:** Always deploy the full stack with `serverless deploy`, never individual functions with `serverless deploy function`. The container-based deployment shares a single image between functions, and deploying one function can leave another referencing a deleted image.
 
 **Key files:**
 - `serverless.yml` - Lambda config, IAM permissions, scheduled triggers, env vars
