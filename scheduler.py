@@ -18,7 +18,7 @@ import price_analyzer
 from storage_interface import create_storage
 from price_repository import PriceRepository
 from telegram_notifier import TelegramNotifier  # Import the new TelegramNotifier class
-from config import PRICE_THRESHOLD  # Import price threshold for low power period calculation
+from config import PRICE_THRESHOLD, TIMEZONE  # Import price threshold and timezone
 
 # Configure logging
 logging.basicConfig(
@@ -59,11 +59,11 @@ class Scheduler:
         """
         # Calculate low power periods for the notification
         low_power_periods = price_analyzer.get_low_power_periods(price_data, PRICE_THRESHOLD)
-        
-        # Format the low power periods for display
+
+        # Format the low power periods for display (convert to Sofia time)
         if low_power_periods:
             periods_text = "\n".join([
-                f"  • {start.strftime('%H:%M')} - {end.strftime('%H:%M')}"
+                f"  • {start.astimezone(TIMEZONE).strftime('%H:%M')} - {end.astimezone(TIMEZONE).strftime('%H:%M')}"
                 for start, end in low_power_periods
             ])
             low_power_info = f"\n\n🔋 Периоди с ниска мощност:\n{periods_text}"
@@ -198,10 +198,10 @@ class Scheduler:
         # Calculate low power periods for the notification.
         low_power_periods = price_analyzer.get_low_power_periods(price_data, PRICE_THRESHOLD)
 
-        # Format the low power periods for display.
+        # Format the low power periods for display (convert to Sofia time).
         if low_power_periods:
             periods_text = "\n".join([
-                f"  • {start.strftime('%H:%M')} - {end.strftime('%H:%M')}"
+                f"  • {start.astimezone(TIMEZONE).strftime('%H:%M')} - {end.astimezone(TIMEZONE).strftime('%H:%M')}"
                 for start, end in low_power_periods
             ])
             low_power_info = f"\n\n🔋 Периоди с ниска мощност:\n{periods_text}"

@@ -85,6 +85,14 @@ class PriceRepository:
         logger.info("Scraping prices from IBEX API")
         json_content = self._fetch_online_data()
         price_data = self._parse_price_table(json_content)
+
+        # Convert times to Sofia timezone (same as _get_stored_data does)
+        for entry in price_data.entries:
+            if entry.time.tzinfo is None:
+                entry.time = TIMEZONE.localize(entry.time)
+            elif entry.time.tzinfo != TIMEZONE:
+                entry.time = entry.time.astimezone(TIMEZONE)
+
         logger.info(f"Successfully scraped price data for {price_data.get_date().strftime('%Y-%m-%d')}")
         return price_data
 
