@@ -35,7 +35,7 @@ python price_analyzer.py                     # one-time price analysis
 ## Architecture
 
 **Two Lambda Functions:**
-- `priceFetcher` - Fetches next-day electricity prices from IBEX (runs hourly at :30)
+- `priceFetcher` - Fetches next-day electricity prices from IBEX (runs hourly at :48)
 - `priceAnalyzer` - Analyzes prices and adjusts inverter power via browser automation (runs every 15 min)
 
 **Core Flow:**

@@ -20,8 +20,8 @@ The application is designed to run as AWS Lambda functions for automated, server
 
 The application consists of two Lambda functions deployed using the Serverless Framework:
 
-1. **priceFetcher** - Fetches electricity prices for the next day (runs every hour at 30 minutes past)
-2. **priceAnalyzer** - Analyzes prices and adjusts power settings (runs every hour on the hour)
+1. **priceFetcher** - Fetches electricity prices for the next day (runs every hour at 48 minutes past)
+2. **priceAnalyzer** - Analyzes prices and adjusts power settings (runs every 15 minutes)
 
 #### Prerequisites
 
@@ -80,8 +80,8 @@ serverless remove
 #### Scheduled Execution
 
 The Lambda functions run automatically:
-- **priceFetcher**: Every hour at 30 minutes past (`cron(30 * * * ? *)`)
-- **priceAnalyzer**: Every hour on the hour (`cron(0 * * * ? *)`)
+- **priceFetcher**: Every hour at 48 minutes past (`cron(48 * * * ? *)`)
+- **priceAnalyzer**: Every 15 minutes (`cron(*/15 * * * ? *)`)
 
 #### Container-Based Deployment
 
@@ -188,8 +188,8 @@ You can store any of the following configuration values in Secrets Manager:
 - `TELEGRAM_BOT_TOKEN`: Telegram bot token for notifications
 - `TELEGRAM_CHAT_ID`: Telegram chat ID for sending notifications
 - `PRICE_THRESHOLD`: Price threshold for power adjustment
-- `LOW_POWER_SETTING`: Power setting when price is above threshold
-- `HIGH_POWER_SETTING`: Power setting when price is below threshold
+- `LOW_POWER_SETTING`: Power setting when price is below threshold
+- `HIGH_POWER_SETTING`: Power setting when price is at or above threshold
 - `FUSIONSOLAR_S3_ACCESS_KEY_ID`: AWS access key ID for S3
 - `FUSIONSOLAR_S3_SECRET_ACCESS_KEY`: AWS secret access key for S3
 

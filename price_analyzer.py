@@ -39,6 +39,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+PRICE_INTERVAL_MINUTES = 15
+PRICE_INTERVAL = datetime.timedelta(minutes=PRICE_INTERVAL_MINUTES)
+
 @dataclass_json
 @dataclass
 class PriceEntry:
@@ -166,6 +169,32 @@ class PriceData:
         avg_price = sum(entry.price for entry in hourly_entries) / len(hourly_entries)
         return avg_price
 
+    def get_interval_price(self, target_time: datetime.datetime) -> float:
+        """
+        Get the price for the 15-minute interval containing the given time.
+
+        Args:
+            target_time (datetime.datetime): The target time to find the interval price for
+
+        Returns:
+            float: The price for the 15-minute interval
+
+        Raises:
+            ValueError: If there is no entry for the target 15-minute interval
+        """
+        if not self.entries:
+            raise ValueError("No price entries available")
+
+        interval_minute = (target_time.minute // PRICE_INTERVAL_MINUTES) * PRICE_INTERVAL_MINUTES
+        interval_start = target_time.replace(minute=interval_minute, second=0, microsecond=0)
+        interval_end = interval_start + PRICE_INTERVAL
+
+        for entry in self.entries:
+            if interval_start <= entry.time < interval_end:
+                return entry.price
+
+        raise ValueError(f"No price entry found for 15-minute interval starting at {interval_start}")
+
     def __str__(self) -> str:
         """String representation of the price data collection with visual timeline"""
         if not self.entries:
@@ -261,7 +290,8 @@ telegram_notifier = TelegramNotifier()
 
 def should_use_low_power(price_data: PriceData, target_time: datetime.datetime, price_threshold: float) -> bool:
     """
-    Determine if low power should be used at the given time based on hourly average.
+    Determine if low power should be used at the given time based on the current
+    15-minute interval price.
 
     Args:
         price_data (PriceData): Object containing price information
@@ -272,10 +302,10 @@ def should_use_low_power(price_data: PriceData, target_time: datetime.datetime, 
         bool: True if low power should be used, False otherwise
 
     Raises:
-        ValueError: If no price data is available for the target hour
+        ValueError: If no price data is available for the target 15-minute interval
     """
-    hourly_avg = price_data.get_hourly_average(target_time)
-    return hourly_avg < price_threshold
+    interval_price = price_data.get_interval_price(target_time)
+    return interval_price < price_threshold
 
 def fetch_price_data(current_time: datetime.datetime, storage: StorageInterface) -> PriceData:
     """
@@ -314,7 +344,7 @@ def fetch_price_data(current_time: datetime.datetime, storage: StorageInterface)
 
 def decide_power_setting(price_data: PriceData, current_time: datetime.datetime) -> str:
     """
-    Decide the power setting based on the hourly average price for the current hour.
+    Decide the power setting based on the price for the current 15-minute interval.
 
     Args:
         price_data (PriceData): Object containing price information
@@ -324,24 +354,22 @@ def decide_power_setting(price_data: PriceData, current_time: datetime.datetime)
         str: The power setting to use (LOW_POWER_SETTING or HIGH_POWER_SETTING)
     """
     try:
-        # Check if low power should be used based on hourly average
-        if should_use_low_power(price_data, current_time, PRICE_THRESHOLD):
-            hourly_avg = price_data.get_hourly_average(current_time)
-            logger.info(f"Hourly average price ({hourly_avg:.2f}) is below threshold ({PRICE_THRESHOLD:.2f}), using low power: {LOW_POWER_SETTING}")
+        interval_price = price_data.get_interval_price(current_time)
+
+        if interval_price < PRICE_THRESHOLD:
+            logger.info(f"15-minute interval price ({interval_price:.2f}) is below threshold ({PRICE_THRESHOLD:.2f}), using low power: {LOW_POWER_SETTING}")
             return LOW_POWER_SETTING
         else:
-            hourly_avg = price_data.get_hourly_average(current_time)
-            logger.info(f"Hourly average price ({hourly_avg:.2f}) is above threshold ({PRICE_THRESHOLD:.2f}), using high power: {HIGH_POWER_SETTING}")
+            logger.info(f"15-minute interval price ({interval_price:.2f}) is at or above threshold ({PRICE_THRESHOLD:.2f}), using high power: {HIGH_POWER_SETTING}")
             return HIGH_POWER_SETTING
 
     except ValueError as e:
-        # No price data available for this hour
         raise ValueError(f"Error determining power setting: {e}") from e
 
 def get_low_power_periods(price_data: PriceData, price_threshold: float) -> List[tuple]:
     """
     Analyze PriceData to determine all time periods when power will be set to low power
-    based on hourly averages.
+    based on each 15-minute interval price.
 
     Args:
         price_data (PriceData): Object containing price information
@@ -353,48 +381,37 @@ def get_low_power_periods(price_data: PriceData, price_threshold: float) -> List
 
     Examples:
         - No low power periods: []
-        - Single hour: [(datetime(2025, 1, 1, 14, 0), datetime(2025, 1, 1, 15, 0))]
-        - Multiple ranges: [(datetime(2025, 1, 1, 2, 0), datetime(2025, 1, 1, 5, 0)),
-                           (datetime(2025, 1, 1, 14, 0), datetime(2025, 1, 1, 16, 0))]
+        - Single interval: [(datetime(2025, 1, 1, 14, 0), datetime(2025, 1, 1, 14, 15))]
+        - Multiple ranges: [(datetime(2025, 1, 1, 2, 0), datetime(2025, 1, 1, 2, 45)),
+                           (datetime(2025, 1, 1, 14, 0), datetime(2025, 1, 1, 16, 15))]
     """
     if not price_data.entries:
         return []
 
-    # Get all unique hours from the entries
-    hours = set()
-    for entry in price_data.entries:
-        hour_start = entry.time.replace(minute=0, second=0, microsecond=0)
-        hours.add(hour_start)
-
-    # Sort hours
-    sorted_hours = sorted(hours)
-
     low_power_periods = []
     current_range_start = None
+    current_range_end = None
 
-    for hour in sorted_hours:
-        try:
-            is_low_power = should_use_low_power(price_data, hour, price_threshold)
+    for entry in sorted(price_data.entries, key=lambda price_entry: price_entry.time):
+        interval_start = entry.time
+        interval_end = interval_start + PRICE_INTERVAL
+        is_low_power = entry.price < price_threshold
 
-            if is_low_power and current_range_start is None:
-                # Start of a new low power period
-                current_range_start = hour
-            elif not is_low_power and current_range_start is not None:
-                # End of current low power period
-                low_power_periods.append((current_range_start, hour))
-                current_range_start = None
-        except ValueError:
-            # No data for this hour, skip it
-            if current_range_start is not None:
-                # End the current period at the previous hour
-                low_power_periods.append((current_range_start, hour))
-                current_range_start = None
+        if is_low_power:
+            if current_range_start is None:
+                current_range_start = interval_start
+            elif interval_start > current_range_end:
+                low_power_periods.append((current_range_start, current_range_end))
+                current_range_start = interval_start
+            if current_range_end is None or interval_end > current_range_end:
+                current_range_end = interval_end
+        elif current_range_start is not None:
+            low_power_periods.append((current_range_start, current_range_end))
+            current_range_start = None
+            current_range_end = None
 
-    # Handle case where the last hour is still in a low power period
     if current_range_start is not None:
-        # End the period at the last hour + 1 hour
-        end_time = sorted_hours[-1] + datetime.timedelta(hours=1)
-        low_power_periods.append((current_range_start, end_time))
+        low_power_periods.append((current_range_start, current_range_end))
 
     return low_power_periods
 
@@ -592,11 +609,11 @@ def main(force_notify: bool = False):
     
     # Send completion notification
     if power_changed:
-        hourly_avg = price_data.get_hourly_average(current_time)
+        interval_price = price_data.get_interval_price(current_time)
         if power_setting == LOW_POWER_SETTING:
-            telegram_notifier.send_message(f"✅ Мощността е зададена на НИСКА ({LOW_POWER_SETTING} kW) - средна цена за часа ({hourly_avg:.2f} EUR/MWh) е под прага ({PRICE_THRESHOLD:.2f} EUR/MWh).")
+            telegram_notifier.send_message(f"✅ Мощността е зададена на НИСКА ({LOW_POWER_SETTING} kW) - цена за 15-минутния интервал ({interval_price:.2f} EUR/MWh) е под прага ({PRICE_THRESHOLD:.2f} EUR/MWh).")
         else:
-            telegram_notifier.send_message(f"✅ Мощността е зададена на {HIGH_POWER_SETTING} - средна цена за часа ({hourly_avg:.2f} EUR/MWh) е над прага ({PRICE_THRESHOLD:.2f} EUR/MWh).")
+            telegram_notifier.send_message(f"✅ Мощността е зададена на {HIGH_POWER_SETTING} - цена за 15-минутния интервал ({interval_price:.2f} EUR/MWh) е на или над прага ({PRICE_THRESHOLD:.2f} EUR/MWh).")
 
     return True
 

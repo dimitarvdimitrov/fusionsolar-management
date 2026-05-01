@@ -90,8 +90,8 @@ Required configuration variables:
 - `FUSIONSOLAR_USERNAME`: Your FusionSolar username
 - `FUSIONSOLAR_PASSWORD`: Your FusionSolar password
 - `PRICE_THRESHOLD`: Price threshold in EUR/MWh (default: 15.04)
-- `LOW_POWER_SETTING`: Power limit when prices are high (default: "5.000")
-- `HIGH_POWER_SETTING`: Power limit when prices are low (default: "no limit")
+- `LOW_POWER_SETTING`: Power limit when prices are below threshold (default: "7.000")
+- `HIGH_POWER_SETTING`: Power limit when prices are at or above threshold (default: "no limit")
 - `TELEGRAM_BOT_TOKEN`: Your Telegram bot token
 - `TELEGRAM_CHAT_ID`: Your Telegram chat ID
 - `FUSIONSOLAR_STORAGE_TYPE`: Storage type ("local" or "s3")
@@ -188,8 +188,8 @@ npm run remove
 
 The Lambda functions are scheduled to run:
 
-- **Price Fetcher**: Every hour at 30 minutes past the hour (`cron(30 * * * ? *)`)
-- **Price Analyzer**: Every hour on the hour (`cron(0 * * * ? *)`)
+- **Price Fetcher**: Every hour at 48 minutes past the hour (`cron(48 * * * ? *)`)
+- **Price Analyzer**: Every 15 minutes (`cron(*/15 * * * ? *)`)
 
 ## Troubleshooting
 

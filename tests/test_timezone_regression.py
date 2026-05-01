@@ -6,7 +6,7 @@ These tests verify:
 1. Price entries are stored with correct timezone (CET/Budapest)
 2. Low power periods are correctly calculated across timezones
 3. Telegram notifications display times in Sofia timezone
-4. Hourly averages work correctly with 15-minute intervals in CET
+4. 15-minute interval prices work correctly across timezones
 
 Background: In d4ac0a9, scrape_prices() was introduced but returned CET times
 without converting to Sofia for display, causing incorrect Telegram notifications.
@@ -19,7 +19,15 @@ import pytz
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from price_analyzer import PriceData, PriceEntry, get_low_power_periods, should_use_low_power
+from price_analyzer import (
+    HIGH_POWER_SETTING,
+    LOW_POWER_SETTING,
+    PriceData,
+    PriceEntry,
+    decide_power_setting,
+    get_low_power_periods,
+    should_use_low_power,
+)
 
 
 # Timezones used in the system
@@ -114,11 +122,15 @@ class TestLowPowerPeriodsTimezone:
     def test_low_power_periods_exist(self, mar5_price_data):
         """March 5 data should have low power periods (prices drop midday)."""
         # From the data, there's a period where prices drop below 15.04
-        # around CET hours 11-14 (prices like 0.79, 5.11, 10.0, etc.)
+        # around CET hours 11-13 (prices like 0.79, 5.11, 10.0, etc.)
         threshold = 15.04
         periods = get_low_power_periods(mar5_price_data, threshold)
 
         assert len(periods) > 0, "Expected at least one low power period"
+        assert periods == [(
+            CET_TZ.localize(datetime.datetime(2026, 3, 5, 11, 30)),
+            CET_TZ.localize(datetime.datetime(2026, 3, 5, 13, 45)),
+        )]
 
     def test_low_power_periods_in_cet(self, mar5_price_data):
         """Low power periods should be returned in the same timezone as input."""
@@ -130,17 +142,31 @@ class TestLowPowerPeriodsTimezone:
             assert start.tzinfo is not None
             assert end.tzinfo is not None
 
-    def test_cet_hour_13_is_low_power(self, mar5_price_data):
-        """CET hour 13 (prices 0.79, 5.11, 10.0, 22.55) should be low power."""
-        # CET hour 13 = 12:00-13:00 UTC = 14:00-15:00 Sofia
-        # Average of 0.79, 5.11, 10.0, 22.55 = 9.61, below 15.04 threshold
+    def test_cet_13_30_is_low_power(self, mar5_price_data):
+        """CET 13:30 price (10.0) should be low power."""
         threshold = 15.04
 
-        # Create a time at CET hour 13
-        cet_hour_13 = CET_TZ.localize(datetime.datetime(2026, 3, 5, 13, 0))
+        cet_13_30 = CET_TZ.localize(datetime.datetime(2026, 3, 5, 13, 30))
 
-        is_low = should_use_low_power(mar5_price_data, cet_hour_13, threshold)
-        assert is_low, "CET hour 13 should be low power (avg ~9.61 < 15.04)"
+        is_low = should_use_low_power(mar5_price_data, cet_13_30, threshold)
+        assert is_low, "CET 13:30 should be low power (10.0 < 15.04)"
+
+    def test_cet_13_45_is_high_power(self, mar5_price_data):
+        """CET 13:45 should be high power even though the old hourly average was low."""
+        threshold = 15.04
+
+        cet_13_45 = CET_TZ.localize(datetime.datetime(2026, 3, 5, 13, 45))
+
+        is_low = should_use_low_power(mar5_price_data, cet_13_45, threshold)
+        assert not is_low, "CET 13:45 should be high power (22.55 >= 15.04)"
+
+    def test_power_setting_can_change_inside_same_hour(self, mar5_price_data):
+        """Power decisions should follow each 15-minute price, not the hour average."""
+        cet_13_30 = CET_TZ.localize(datetime.datetime(2026, 3, 5, 13, 30))
+        cet_13_45 = CET_TZ.localize(datetime.datetime(2026, 3, 5, 13, 45))
+
+        assert decide_power_setting(mar5_price_data, cet_13_30) == LOW_POWER_SETTING
+        assert decide_power_setting(mar5_price_data, cet_13_45) == HIGH_POWER_SETTING
 
     def test_cet_hour_8_is_high_power(self, mar5_price_data):
         """CET hour 8 (morning peak) should be high power."""
@@ -170,8 +196,8 @@ class TestLowPowerPeriodsTimezone:
             assert (cet_hour + 1) % 24 == sofia_hour
 
 
-class TestHourlyAverageTimezone:
-    """Test that hourly averages work correctly with timezone-aware times."""
+class TestIntervalPriceTimezone:
+    """Test that 15-minute interval prices work correctly with timezone-aware times."""
 
     @pytest.fixture
     def mar5_price_data(self):
@@ -188,34 +214,24 @@ class TestHourlyAverageTimezone:
         fetch_time = datetime.datetime.fromtimestamp(data['fetch_time'], tz=CET_TZ)
         return PriceData(entries=entries, fetch_time=fetch_time)
 
-    def test_hourly_average_cet_hour_0(self, mar5_price_data):
-        """CET hour 0 should average entries 0-3 (135.24, 116.08, 112.22, 111.87)."""
-        cet_hour_0 = CET_TZ.localize(datetime.datetime(2026, 3, 5, 0, 30))
+    def test_interval_price_cet_00_30(self, mar5_price_data):
+        """CET 00:30 should use the 00:30 interval price, not the hour average."""
+        cet_00_30 = CET_TZ.localize(datetime.datetime(2026, 3, 5, 0, 30))
 
-        avg = mar5_price_data.get_hourly_average(cet_hour_0)
-        expected = (135.24 + 116.08 + 112.22 + 111.87) / 4
+        price = mar5_price_data.get_interval_price(cet_00_30)
 
-        assert abs(avg - expected) < 0.01
+        assert price == 112.22
 
-    def test_same_hour_different_tz_same_result(self, mar5_price_data):
+    def test_same_interval_different_tz_same_result(self, mar5_price_data):
         """Querying the same instant in different timezones should give same result."""
         # 14:00 Sofia = 13:00 CET = 12:00 UTC
         sofia_time = SOFIA_TZ.localize(datetime.datetime(2026, 3, 5, 14, 30))
         cet_time = CET_TZ.localize(datetime.datetime(2026, 3, 5, 13, 30))
 
-        # Note: These are different hours in different timezones, so they'll
-        # query different 1-hour windows. This test verifies the timezone
-        # handling is consistent.
+        price_sofia = mar5_price_data.get_interval_price(sofia_time)
+        price_cet = mar5_price_data.get_interval_price(cet_time)
 
-        # CET 13:00-14:00 has entries at 13:00, 13:15, 13:30, 13:45
-        # Sofia 14:00-15:00 is the same wall-clock hour but different TZ
-
-        # The actual behavior depends on how entries are stored.
-        # If entries are stored in CET, querying with Sofia time needs conversion.
-
-        # For now, just verify both calls succeed
-        avg_cet = mar5_price_data.get_hourly_average(cet_time)
-        assert avg_cet > 0
+        assert price_sofia == price_cet == 10.0
 
 
 class TestTelegramNotificationTimezone:

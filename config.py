@@ -120,8 +120,8 @@ FUSIONSOLAR_PASSWORD = get_config_value("FUSIONSOLAR_PASSWORD")
 PRICE_THRESHOLD = float(get_config_value("PRICE_THRESHOLD", "15.04"))
 
 # Power settings (in kW)
-LOW_POWER_SETTING = get_config_value("LOW_POWER_SETTING", "7.000") # Power limit when prices are high
-HIGH_POWER_SETTING = get_config_value("HIGH_POWER_SETTING", "no limit")   # Power limit when prices are low
+LOW_POWER_SETTING = get_config_value("LOW_POWER_SETTING", "7.000") # Power limit when prices are below threshold
+HIGH_POWER_SETTING = get_config_value("HIGH_POWER_SETTING", "no limit")   # Power limit when prices are at or above threshold
 
 # Telegram configuration constants
 TELEGRAM_BOT_TOKEN = get_config_value("TELEGRAM_BOT_TOKEN")

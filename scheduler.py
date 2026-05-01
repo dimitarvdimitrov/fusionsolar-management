@@ -4,7 +4,7 @@
 """
 Scheduler for FusionSolar Power Adjustment
 
-This script implements a scheduler that runs the price analyzer every hour
+This script implements a scheduler that runs the price analyzer every 15 minutes
 to automatically adjust power limits based on electricity prices.
 It also fetches prices for the next day on an hourly basis.
 """
@@ -212,20 +212,22 @@ class Scheduler:
 
     def schedule_jobs(self) -> None:
         """
-        Schedule the price analyzer and next day price fetching to run every hour.
+        Schedule the price analyzer to run every 15 minutes and next day price
+        fetching to run every hour.
         """
         logger.info("Setting up scheduler...")
         
-        # Schedule the price analyzer to run every hour at the 0 minute mark
-        schedule.every().hour.at(":00").do(self.run_price_analyzer)
+        # Schedule the price analyzer to run on quarter-hour boundaries.
+        for minute in (":00", ":15", ":30", ":45"):
+            schedule.every().hour.at(minute).do(self.run_price_analyzer)
         
-        # Schedule the next day price fetching to run every hour at the 30 minute mark
+        # Schedule the next day price fetching to run every hour at the 48 minute mark
         # This is staggered to avoid running both tasks simultaneously
-        schedule.every().hour.at(":30").do(self.fetch_next_day_prices)
+        schedule.every().hour.at(":48").do(self.fetch_next_day_prices)
         
         logger.info("Scheduler set up successfully")
-        logger.info("Price analyzer will run every hour at :00")
-        logger.info("Next day price fetching will run every hour at :30")
+        logger.info("Price analyzer will run every 15 minutes at :00, :15, :30, and :45")
+        logger.info("Next day price fetching will run every hour at :48")
         
         # Keep the scheduler running indefinitely
         while True:
